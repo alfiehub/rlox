@@ -16,6 +16,8 @@ impl Scanner {
         let mut iter = source.chars().peekable();
         while let Some(char) = iter.next() {
             match char {
+                ' ' | '\r' | '\t' => (),
+                '\n' => line += 1,
                 '(' => tokens.push(Token::new_empty(TokenType::LeftParen, line)),
                 ')' => tokens.push(Token::new_empty(TokenType::RightParen, line)),
                 '{' => tokens.push(Token::new_empty(TokenType::LeftBrace, line)),
@@ -58,12 +60,31 @@ impl Scanner {
                         }
                         iter.next();
                     }
+                } else if let Some('*') = iter.peek() {
+                    iter.next();
+                    let mut nesting = 1;
+                    while let Some(ch) = iter.next() {
+                        if ch == '*' {
+                            if let Some('/') = iter.peek() {
+                                iter.next();
+                                nesting -= 1;
+                                if nesting == 0 {
+                                    break;
+                                }
+                            }
+                        } else if ch == '/' {
+                            if let Some('*') = iter.peek() {
+                                iter.next();
+                                nesting += 1;
+                            }
+                        } else if ch == '\n' {
+                            line += 1;
+                        }
+                    }
                 } else {
                     tokens.push(Token::new_empty(TokenType::Slash, line));
                 },
-                ' ' | '\r' | '\t' => (),
-                '\n' => line += 1,
-                '"' => if let Some(ch) = iter.peek() {
+                '"' => if let Some(_) = iter.peek() {
                     let mut string = String::new();
                     // TODO: is a mutable closed here the best approach?
                     let mut closed = false;
@@ -148,5 +169,29 @@ mod tests {
         let scanner = Scanner::new();
         let tokens = scanner.scan(source).unwrap();
         assert_eq!(tokens.first().unwrap().token_type, TokenType::Number(123.45));
+    }
+
+    #[test]
+    fn test_block_comment() {
+        let source = "/* hello world */";
+        let scanner = Scanner::new();
+        let tokens = scanner.scan(source).unwrap();
+        assert_eq!(tokens.len(), 0);
+    }
+
+    #[test]
+    fn test_nested_block_comment() {
+        let source = "/* hello /* world */ */";
+        let scanner = Scanner::new();
+        let tokens = scanner.scan(source).unwrap();
+        assert_eq!(tokens.len(), 0);
+    }
+
+    #[test]
+    fn test_deeply_nested_block_comment() {
+        let source = "/* hello /* world /* /* /* lmao */ */ //// **** \n\n\n\n /* */ */ */ */";
+        let scanner = Scanner::new();
+        let tokens = scanner.scan(source).unwrap();
+        assert_eq!(tokens.len(), 0);
     }
 }
