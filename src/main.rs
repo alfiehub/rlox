@@ -1,6 +1,7 @@
 use clap::Parser;
 use anyhow::Result;
 
+mod ast;
 mod scanner;
 mod error;
 mod token;

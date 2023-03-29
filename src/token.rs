@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Debug, PartialEq)]
 pub enum TokenType {
     // Single character tokens
@@ -69,6 +71,52 @@ impl TokenType {
             "var" => Some(TokenType::Var),
             "while" => Some(TokenType::While),
             _ => None,
+        }
+    }
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LeftParen => write!(f, "("),
+            Self::RightParen => write!(f, ")"),
+            Self::LeftBrace => write!(f, "{{"),
+            Self::RightBrace => write!(f, "}}"),
+            Self::Comma => write!(f, ","),
+            Self::Dot => write!(f, "."),
+            Self::Minus => write!(f, "-"),
+            Self::Plus => write!(f, "+"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Slash => write!(f, "/"),
+            Self::Star => write!(f, "*"),
+            Self::Bang => write!(f, "!"),
+            Self::BangEqual => write!(f, "!="),
+            Self::Equal => write!(f, "="),
+            Self::EqualEqual => write!(f, "=="),
+            Self::Greater => write!(f, ">"),
+            Self::GreaterEqual => write!(f, ">="),
+            Self::Less => write!(f, "<"),
+            Self::LessEqual => write!(f, "<="),
+            Self::Identifier(identifier) => write!(f, "{}", identifier),
+            Self::String(string) => write!(f, "{}", string),
+            Self::Number(number) => write!(f, "{}", number),
+            Self::And => write!(f, "and"),
+            Self::Class => write!(f, "class"),
+            Self::Else => write!(f, "else"),
+            Self::False => write!(f, "false"),
+            Self::For => write!(f, "for"),
+            Self::Fun => write!(f, "fun"),
+            Self::If => write!(f, "if"),
+            Self::Nil => write!(f, "nil"),
+            Self::Or => write!(f, "or"),
+            Self::Print => write!(f, "print"),
+            Self::Return => write!(f, "return"),
+            Self::Super => write!(f, "super"),
+            Self::This => write!(f, "this"),
+            Self::True => write!(f, "true"),
+            Self::Var => write!(f, "var"),
+            Self::While => write!(f, "while"),
+            Self::Eof => write!(f, "EOF"),
         }
     }
 }
