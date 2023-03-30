@@ -1,15 +1,15 @@
 use std::fmt::Display;
 
-use crate::token::TokenType;
+use crate::token::{Token, TokenType};
 
 #[derive(Debug)]
-pub struct Literal(TokenType);
+pub struct Literal(pub TokenType);
 
 #[derive(Debug)]
-pub struct UnaryOperator(TokenType);
+pub struct UnaryOperator(pub TokenType);
 
 #[derive(Debug)]
-pub struct Operator(TokenType);
+pub struct Operator(pub TokenType);
 
 #[derive(Debug)]
 pub enum Expression {
@@ -95,10 +95,8 @@ mod tests {
             )
             .into(),
             Operator(TokenType::Star),
-            Expression::Grouping(
-                Expression::Literal(Literal(TokenType::Number(45.67))).into()
-            )
-            .into(),
+            Expression::Grouping(Expression::Literal(Literal(TokenType::Number(45.67))).into())
+                .into(),
         );
         assert_eq!(expression.to_string(), "(* (- 123) (group 45.67))");
     }

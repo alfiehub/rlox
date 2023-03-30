@@ -5,6 +5,7 @@ mod ast;
 mod scanner;
 mod error;
 mod token;
+mod parser;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]

@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq)]
+use crate::ast::{Expression, Literal};
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     // Single character tokens
     LeftParen,
@@ -121,7 +123,7 @@ impl Display for TokenType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: Option<String>,
