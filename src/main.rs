@@ -18,7 +18,9 @@ struct Cli {
 fn run(code: String) -> Result<()> {
     let scanner = scanner::Scanner::new();
     let tokens = scanner.scan(&code)?;
-    println!("{:?}", tokens);
+    let mut parser = parser::Parser::new(tokens);
+    let ast = parser.parse()?;
+    interpreter::Interpreter::interpret(&ast)?;
     Ok(())
 }
 

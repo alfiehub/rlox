@@ -3,6 +3,9 @@ use std::fmt::Display;
 use crate::token::{Token, TokenType};
 
 #[derive(Debug)]
+pub struct Program(pub Statement);
+
+#[derive(Debug)]
 pub struct Literal(pub TokenType);
 
 #[derive(Debug)]
@@ -17,6 +20,21 @@ pub enum Expression {
     Binary(Box<Expression>, Operator, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(Literal),
+}
+
+#[derive(Debug)]
+pub enum Statement {
+    Expression(Expression),
+    Print(Expression),
+}
+
+impl Display for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Expression(expression) => write!(f, "{}", expression),
+            Statement::Print(expression) => write!(f, "(print {})", expression),
+        }
+    }
 }
 
 fn parenthesize(name: &str, expressions: &[&Expression]) -> String {

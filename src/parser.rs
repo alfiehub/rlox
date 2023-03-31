@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
 use crate::{
-    ast::{Expression, Literal, Operator, UnaryOperator},
+    ast::{Expression, Literal, Operator, UnaryOperator, Statement},
     token::{Token, TokenType},
 };
 
@@ -105,6 +105,29 @@ impl Parser {
         Ok(expr)
     }
 
+    pub fn statement(&mut self) -> Result<Statement> {
+        let statement = match self.peek().token_type {
+            TokenType::Print => {
+                self.advance();
+                Statement::Print(self.expression()?)
+            }
+            _ => Statement::Expression(self.expression()?)
+        };
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        Ok(statement)
+    }
+
+    fn program(&mut self) -> Result<Vec<Statement>> {
+        let mut statements = vec![];
+        while let Ok(statement) = self.statement() {
+            statements.push(statement);
+            if self.is_at_end() {
+                break;
+            }
+        }
+        Ok(statements)
+    }
+
     fn synchronize(&mut self) -> Result<()> {
         self.advance();
         while !self.is_at_end() {
@@ -147,8 +170,8 @@ impl Parser {
         self.tokens[self.current - 1].clone()
     }
 
-    pub fn parse(tokens: Vec<Token>) -> Result<()> {
-        Ok(())
+    pub fn parse(&mut self) -> Result<Vec<Statement>> {
+        self.program()
     }
 }
 
@@ -177,6 +200,29 @@ mod tests {
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
             assert_eq!(expr.to_string(), *result);
+        }
+    }
+
+    #[test]
+    fn test_statements() {
+        let codes = vec![
+            "1 + 2 * 3;",
+            "1 + 2 * 3 + 4;",
+            "print 1 + 2, 3 + 4;",
+            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;"
+        ];
+        let results = vec![
+            "(+ 1 (* 2 3))",
+            "(+ (+ 1 (* 2 3)) 4)",
+            "(print (, (+ 1 2) (+ 3 4)))",
+            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))"
+        ];
+        let scanner = Scanner::new();
+        for (code, result) in codes.iter().zip(results.iter()) {
+            let tokens = scanner.scan(code).unwrap();
+            let mut parser = Parser::new(tokens);
+            let statement = parser.statement().unwrap();
+            assert_eq!(statement.to_string(), *result, "\"{}\" yielded {}", code, statement.to_string());
         }
     }
 }

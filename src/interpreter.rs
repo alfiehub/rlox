@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use anyhow::{Result, bail};
 
-use crate::{ast::{Expression, Literal}, token::TokenType};
+use crate::{ast::{Expression, Literal, Statement}, token::TokenType};
 
 #[derive(Debug, PartialEq)]
 enum LoxType {
@@ -33,11 +33,24 @@ impl Display for LoxType {
     }
 }
 
-struct Interpreter {}
+pub struct Interpreter {}
 
 impl Interpreter {
-    fn interpret() {
+    pub fn interpret(statement: &[Statement]) -> Result<()> {
+        for stmt in statement {
+            Self::evaluate_statement(stmt)?;
+        }
+        Ok(())
+    }
 
+    fn evaluate_statement(stmt: &Statement) -> Result<LoxType> {
+        let value = match stmt {
+            Statement::Expression(expr) | Statement::Print(expr) => Self::evaluate_expression(expr)?
+        };
+        if let Statement::Print(_) = stmt {
+            println!("{}", value);
+        }
+        Ok(LoxType::Nil)
     }
 
     fn evaluate_expression(expr: &Expression) -> Result<LoxType> {
@@ -148,6 +161,31 @@ mod tests {
             let expr = parser.expression().unwrap();
             let result = Interpreter::evaluate_expression(&expr).unwrap();
             assert_eq!(result, *expected_result, "\"{}\" resulted in {}", expression, result);
+        }
+    }
+
+    #[test]
+    fn test_evaluate_statement() {
+        let expressions = vec![
+            "6 / (2 - 1) + 2;",
+            "1 + 2 * 3;",
+            "1 + 2 * 3 - 4 / 2;",
+            "1 + 2 * 3 - 4 / 2 + 1;",
+            "true == false;",
+            "print true != false;",
+            "print true == !false;",
+            "print (2 < 3);",
+            "print 3 <= 3;",
+            "print \"hello\" == \"hello\";",
+            "print \"hello\" == \"world\";",
+        ];
+        for expression in expressions.iter() {
+            let scanner = Scanner::new();
+            let tokens = scanner.scan(expression).unwrap();
+            let mut parser = Parser::new(tokens);
+            let expr = parser.statement().unwrap();
+            let result = Interpreter::evaluate_statement(&expr).unwrap();
+            assert_eq!(result, LoxType::Nil, "\"{}\" resulted in {}", expression, result);
         }
     }
 }
