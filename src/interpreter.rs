@@ -1,8 +1,10 @@
+use std::fmt::Display;
+
 use anyhow::{Result, bail};
 
 use crate::{ast::{Expression, Literal}, token::TokenType};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum LoxType {
     Number(f64),
     String(String),
@@ -16,6 +18,17 @@ impl LoxType {
             LoxType::Nil => false,
             LoxType::Boolean(b) => *b,
             _ => true,
+        }
+    }
+}
+
+impl Display for LoxType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoxType::Number(n) => write!(f, "{}", n),
+            LoxType::String(s) => write!(f, "{}", s),
+            LoxType::Boolean(b) => write!(f, "{}", b),
+            LoxType::Nil => write!(f, "nil"),
         }
     }
 }
@@ -101,14 +114,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_evaluate_expression() {
-        let code = "6 / (2 - 1) + 2".to_string();
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(&code).unwrap();
-        let mut parser = Parser::new(tokens);
-        let expr = parser.expression().unwrap();
-        println!("Parsed expression {}", expr);
-        let result = Interpreter::evaluate_expression(&expr).unwrap();
-        println!("Computed result {:?}", result);
+    fn test_evaluate_expressions() {
+        let expressions = vec![
+            "6 / (2 - 1) + 2",
+            "1 + 2 * 3",
+            "1 + 2 * 3 - 4 / 2",
+            "1 + 2 * 3 - 4 / 2 + 1",
+            "true == false",
+            "true != false",
+            "true == !false",
+            "2 < 3",
+            "3 <= 3",
+            "\"hello\" == \"hello\"",
+            "\"hello\" == \"world\"",
+        ];
+        let results = vec![
+            LoxType::Number(8.0),
+            LoxType::Number(7.0),
+            LoxType::Number(5.0),
+            LoxType::Number(6.0),
+            LoxType::Boolean(false),
+            LoxType::Boolean(true),
+            LoxType::Boolean(true),
+            LoxType::Boolean(true),
+            LoxType::Boolean(true),
+            LoxType::Boolean(true),
+            LoxType::Boolean(false),
+        ];
+        for (expression, expected_result) in expressions.iter().zip(results.iter()) {
+            let scanner = Scanner::new();
+            let tokens = scanner.scan(expression).unwrap();
+            let mut parser = Parser::new(tokens);
+            let expr = parser.expression().unwrap();
+            let result = Interpreter::evaluate_expression(&expr).unwrap();
+            assert_eq!(result, *expected_result, "\"{}\" resulted in {}", expression, result);
+        }
     }
 }

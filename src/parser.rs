@@ -158,32 +158,25 @@ mod tests {
     use crate::scanner::Scanner;
 
     #[test]
-    fn test_parser_expression() {
-        let code = "1 + 2 * 3".to_string();
+    fn test_expressions() {
+        let codes = vec![
+            "1 + 2 * 3",
+            "1 + 2 * 3 + 4",
+            "1 + 2, 3 + 4",
+            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8"
+        ];
+        let results = vec![
+            "(+ 1 (* 2 3))",
+            "(+ (+ 1 (* 2 3)) 4)",
+            "(, (+ 1 2) (+ 3 4))",
+            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)"
+        ];
         let scanner = Scanner::new();
-        let tokens = scanner.scan(&code).unwrap();
-        let mut parser = Parser::new(tokens);
-        let expr = parser.expression().unwrap();
-        println!("{}", expr);
-    }
-
-    #[test]
-    fn test_parser_comma_operator() {
-        let code = "1 + 2, 3 + 4".to_string();
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(&code).unwrap();
-        let mut parser = Parser::new(tokens);
-        let expr = parser.expression().unwrap();
-        println!("{}", expr);
-    }
-
-    #[test]
-    fn test_long() {
-        let code = "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8".to_string();
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(&code).unwrap();
-        let mut parser = Parser::new(tokens);
-        let expr = parser.expression().unwrap();
-        println!("{}", expr);
+        for (code, result) in codes.iter().zip(results.iter()) {
+            let tokens = scanner.scan(code).unwrap();
+            let mut parser = Parser::new(tokens);
+            let expr = parser.expression().unwrap();
+            assert_eq!(expr.to_string(), *result);
+        }
     }
 }
