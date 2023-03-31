@@ -5,13 +5,13 @@ use crate::{
     token::{Token, TokenType},
 };
 
-struct Parser {
+pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, current: 0 }
     }
 
@@ -23,7 +23,7 @@ impl Parser {
         bail!(message.to_owned());
     }
 
-    fn expression(&mut self) -> Result<Expression> {
+    pub fn expression(&mut self) -> Result<Expression> {
         self.equality()
     }
 
@@ -34,15 +34,18 @@ impl Parser {
             | TokenType::True
             | TokenType::Nil
             | TokenType::Number(_)
-            | TokenType::String(_) => Expression::Literal(Literal(token.token_type.clone())),
+            | TokenType::String(_) => {
+                self.advance();
+                Expression::Literal(Literal(token.token_type.clone()))
+            },
             TokenType::LeftParen => {
+                self.advance();
                 let expr = self.expression()?;
                 self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
                 Expression::Grouping(Box::new(expr))
             }
             _ => bail!("Expect expression."),
         };
-        self.advance();
         Ok(expr)
     }
 
@@ -59,58 +62,47 @@ impl Parser {
     }
 
     fn factor(&mut self) -> Result<Expression> {
-        let expr = self.unary()?;
-        Ok(match self.peek().token_type {
-            TokenType::Slash | TokenType::Star => {
-                self.advance();
-                let operator = self.previous();
-                let right = self.unary()?;
-                Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right))
-            }
-            _ => expr,
-        })
+        let mut expr = self.unary()?;
+        while let TokenType::Slash | TokenType::Star = self.peek().token_type {
+            self.advance();
+            let operator = self.previous();
+            let right = self.unary()?;
+            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+        }
+        Ok(expr)
     }
 
     fn term(&mut self) -> Result<Expression> {
-        let expr = self.factor()?;
-        Ok(match self.peek().token_type {
-            TokenType::Minus | TokenType::Plus => {
-                self.advance();
-                let operator = self.previous();
-                let right = self.factor()?;
-                Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right))
-            }
-            _ => expr,
-        })
+        let mut expr = self.factor()?;
+        while let TokenType::Minus | TokenType::Plus = self.peek().token_type {
+            self.advance();
+            let operator = self.previous();
+            let right = self.factor()?;
+            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+        }
+        Ok(expr)
     }
 
     fn comparison(&mut self) -> Result<Expression> {
-        let expr = self.term()?;
-        Ok(match self.peek().token_type {
-            TokenType::Greater
-            | TokenType::GreaterEqual
-            | TokenType::Less
-            | TokenType::LessEqual => {
-                self.advance();
-                let operator = self.previous();
-                let right = self.term()?;
-                Expression::Binary(Box::new(expr), Operator(operator.token_type.clone()), Box::new(right))
-            }
-            _ => expr,
-        })
+        let mut expr = self.term()?;
+        while let TokenType::Greater | TokenType::GreaterEqual | TokenType::Less | TokenType::LessEqual = self.peek().token_type {
+            self.advance();
+            let operator = self.previous();
+            let right = self.term()?;
+            return Ok(Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right)));
+        }
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expression> {
-        let expr = self.comparison()?;
-        Ok(match self.peek().token_type {
-            TokenType::BangEqual | TokenType::EqualEqual => {
-                self.advance();
-                let operator = self.previous();
-                let right = self.comparison()?;
-                Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right))
-            }
-            _ => expr,
-        })
+        let mut expr = self.comparison()?;
+        while let TokenType::BangEqual | TokenType::EqualEqual | TokenType::Comma = self.peek().token_type {
+            self.advance();
+            let operator = self.previous();
+            let right = self.comparison()?;
+            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+        }
+        Ok(expr)
     }
 
     fn synchronize(&mut self) -> Result<()> {
@@ -168,6 +160,26 @@ mod tests {
     #[test]
     fn test_parser_expression() {
         let code = "1 + 2 * 3".to_string();
+        let scanner = Scanner::new();
+        let tokens = scanner.scan(&code).unwrap();
+        let mut parser = Parser::new(tokens);
+        let expr = parser.expression().unwrap();
+        println!("{}", expr);
+    }
+
+    #[test]
+    fn test_parser_comma_operator() {
+        let code = "1 + 2, 3 + 4".to_string();
+        let scanner = Scanner::new();
+        let tokens = scanner.scan(&code).unwrap();
+        let mut parser = Parser::new(tokens);
+        let expr = parser.expression().unwrap();
+        println!("{}", expr);
+    }
+
+    #[test]
+    fn test_long() {
+        let code = "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8".to_string();
         let scanner = Scanner::new();
         let tokens = scanner.scan(&code).unwrap();
         let mut parser = Parser::new(tokens);
