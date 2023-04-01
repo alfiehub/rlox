@@ -23,6 +23,7 @@ pub enum Expression {
     Binary(Box<Expression>, Operator, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(Literal),
+    Assignment(Identifier, Box<Expression>),
 }
 
 #[derive(Debug)]
@@ -72,6 +73,7 @@ impl Display for Expression {
                 }
                 Expression::Grouping(expression) => parenthesize("group", &[expression]),
                 Expression::Literal(literal) => literal.0.to_string(),
+                Expression::Assignment(identifier, expression) => parenthesize(&identifier.0.to_string(), &[expression])
             }
         )
     }

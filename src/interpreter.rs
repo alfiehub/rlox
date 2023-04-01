@@ -147,6 +147,19 @@ impl Interpreter {
                     // TODO: allow number == string
                     _ => bail!("Invalid binary operator."),
                 }
+            },
+            Expression::Assignment(identifier, expr) => {
+                let value = self.evaluate_expression(expr)?;
+                if let TokenType::Identifier(identifier) = &identifier.0 {
+                    if self.environment.get(identifier) == None {
+                        bail!("Undefined variable '{}'", identifier);
+                    } else {
+                        self.environment.insert(identifier.clone(), value);
+                    }
+                } else {
+                    bail!("Expected identifier, got {:?}", identifier);
+                }
+                Ok(LoxType::Nil)
             }
             _ => bail!("Not implemented"),
         }

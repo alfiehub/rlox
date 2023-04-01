@@ -24,7 +24,23 @@ impl Parser {
     }
 
     pub fn expression(&mut self) -> Result<Expression> {
-        self.equality()
+        self.assignment()
+    }
+
+    pub fn assignment(&mut self) -> Result<Expression> {
+        let expr = self.equality()?;
+        match self.peek().token_type {
+            TokenType::Equal => {
+                self.advance();
+                let value = self.assignment()?;
+                if let Expression::Literal(Literal(TokenType::Identifier(identifier))) = expr {
+                    return Ok(Expression::Assignment(Identifier(TokenType::Identifier(identifier)), Box::new(value)));
+                } else {
+                    bail!("Invalid assignment target.");
+                }
+            }
+            _ => Ok(expr),
+        }
     }
 
     fn primary(&mut self) -> Result<Expression> {
