@@ -9,6 +9,9 @@ pub struct Program(pub Statement);
 pub struct Literal(pub TokenType);
 
 #[derive(Debug)]
+pub struct Identifier(pub TokenType);
+
+#[derive(Debug)]
 pub struct UnaryOperator(pub TokenType);
 
 #[derive(Debug)]
@@ -26,6 +29,12 @@ pub enum Expression {
 pub enum Statement {
     Expression(Expression),
     Print(Expression),
+}
+
+#[derive(Debug)]
+pub enum Declaration {
+    Variable(Identifier, Option<Expression>),
+    Statement(Statement)
 }
 
 impl Display for Statement {

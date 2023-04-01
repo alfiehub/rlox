@@ -1,5 +1,6 @@
 use clap::Parser;
 use anyhow::Result;
+use interpreter::Interpreter;
 
 mod ast;
 mod scanner;
@@ -15,26 +16,28 @@ struct Cli {
     file: Option<String>,
 }
 
-fn run(code: String) -> Result<()> {
+fn run(code: String, interpreter: &mut Interpreter) -> Result<()> {
     let scanner = scanner::Scanner::new();
     let tokens = scanner.scan(&code)?;
     let mut parser = parser::Parser::new(tokens);
     let ast = parser.parse()?;
-    interpreter::Interpreter::interpret(&ast)?;
+    interpreter.interpret(&ast)?;
     Ok(())
 }
 
 fn run_file(file: String) -> Result<()> {
     let file_content = std::fs::read_to_string(file)?;
-    run(file_content)?;
+    let mut interpreter = interpreter::Interpreter::new();
+    run(file_content, &mut interpreter)?;
     Ok(())
 }
 
 fn run_prompt() -> Result<()> {
+    let mut interpreter = interpreter::Interpreter::new();
     loop {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
-        run(input)?;
+        run(input, &mut interpreter)?;
     };
 }
 

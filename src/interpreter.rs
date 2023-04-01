@@ -1,10 +1,10 @@
-use std::fmt::Display;
+use std::{fmt::Display, collections::HashMap};
 
 use anyhow::{Result, bail};
 
-use crate::{ast::{Expression, Literal, Statement}, token::TokenType};
+use crate::{ast::{Expression, Statement, Declaration}, token::TokenType};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum LoxType {
     Number(f64),
     String(String),
@@ -33,27 +33,54 @@ impl Display for LoxType {
     }
 }
 
-pub struct Interpreter {}
+pub struct Interpreter {
+    environment: HashMap<String, LoxType>
+}
 
 impl Interpreter {
-    pub fn interpret(statement: &[Statement]) -> Result<()> {
-        for stmt in statement {
-            Self::evaluate_statement(stmt)?;
+    pub fn new() -> Self {
+        Self {
+            environment: HashMap::new(),
+        }
+    }
+
+    pub fn interpret(&mut self, declarations: &[Declaration]) -> Result<()> {
+        for decl in declarations {
+            self.evaluate_declaration(decl)?;
         }
         Ok(())
     }
 
-    fn evaluate_statement(stmt: &Statement) -> Result<LoxType> {
+    fn evaluate_declaration(&mut self, decl: &Declaration) -> Result<LoxType> {
+        match decl {
+            Declaration::Variable(identifier, expr_option) => {
+                let value = if let Some(expr) = expr_option {
+                    self.evaluate_expression(expr)?
+                } else {
+                    LoxType::Nil
+                };
+                if let TokenType::Identifier(identifier) = &identifier.0 {
+                    self.environment.insert(identifier.clone(), value);
+                } else {
+                    bail!("Expected identifier, got {:?}", identifier);
+                }
+                Ok(LoxType::Nil)
+            },
+            Declaration::Statement(stmt) => self.evaluate_statement(stmt),
+        }
+    }
+
+    fn evaluate_statement(&mut self, stmt: &Statement) -> Result<LoxType> {
         let value = match stmt {
-            Statement::Expression(expr) | Statement::Print(expr) => Self::evaluate_expression(expr)?
+            Statement::Expression(expr) | Statement::Print(expr) => self.evaluate_expression(expr)?
         };
-        if let Statement::Print(_) = stmt {
+        if let Statement::Print(expr) = stmt {
             println!("{}", value);
         }
         Ok(LoxType::Nil)
     }
 
-    fn evaluate_expression(expr: &Expression) -> Result<LoxType> {
+    fn evaluate_expression(&mut self, expr: &Expression) -> Result<LoxType> {
         match expr {
             // TODO: avoid cloning here?
             Expression::Literal(literal) => match literal.0.clone() {
@@ -62,11 +89,18 @@ impl Interpreter {
                 TokenType::True => Ok(LoxType::Boolean(true)),
                 TokenType::False => Ok(LoxType::Boolean(false)),
                 TokenType::Nil => Ok(LoxType::Nil),
+                TokenType::Identifier(identifier) => {
+                    if let Some(value) = self.environment.get(&identifier) {
+                        Ok((*value).clone())
+                    } else {
+                        bail!("Undefined variable '{}'", identifier);
+                    }
+                },
                 _ => bail!("Invalid literal"),
             },
-            Expression::Grouping(expr) => Self::evaluate_expression(expr),
+            Expression::Grouping(expr) => self.evaluate_expression(expr),
             Expression::Unary(operator, expr) => {
-                let right = Self::evaluate_expression(expr)?;
+                let right = self.evaluate_expression(expr)?;
                 match operator.0 {
                     TokenType::Bang => Ok(LoxType::Boolean(!right.is_truthy())),
                     TokenType::Minus => match right {
@@ -77,8 +111,8 @@ impl Interpreter {
                 }
             },
             Expression::Binary(left, operator, right) => {
-                let left = Self::evaluate_expression(left)?;
-                let right = Self::evaluate_expression(right)?;
+                let left = self.evaluate_expression(left)?;
+                let right = self.evaluate_expression(right)?;
 
                 match (left, right) {
                     (LoxType::Number(left), LoxType::Number(right)) => match operator.0 {
@@ -159,7 +193,7 @@ mod tests {
             let tokens = scanner.scan(expression).unwrap();
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
-            let result = Interpreter::evaluate_expression(&expr).unwrap();
+            let result = Interpreter::new().evaluate_expression(&expr).unwrap();
             assert_eq!(result, *expected_result, "\"{}\" resulted in {}", expression, result);
         }
     }
@@ -184,7 +218,7 @@ mod tests {
             let tokens = scanner.scan(expression).unwrap();
             let mut parser = Parser::new(tokens);
             let expr = parser.statement().unwrap();
-            let result = Interpreter::evaluate_statement(&expr).unwrap();
+            let result = Interpreter::new().evaluate_statement(&expr).unwrap();
             assert_eq!(result, LoxType::Nil, "\"{}\" resulted in {}", expression, result);
         }
     }

@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
 use crate::{
-    ast::{Expression, Literal, Operator, UnaryOperator, Statement},
+    ast::{Expression, Literal, Operator, UnaryOperator, Statement, Declaration, Identifier},
     token::{Token, TokenType},
 };
 
@@ -43,7 +43,11 @@ impl Parser {
                 let expr = self.expression()?;
                 self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
                 Expression::Grouping(Box::new(expr))
-            }
+            },
+            TokenType::Identifier(_) => {
+                self.advance();
+                Expression::Literal(Literal(token.token_type.clone()))
+            },
             _ => bail!("Expect expression."),
         };
         Ok(expr)
@@ -117,15 +121,39 @@ impl Parser {
         Ok(statement)
     }
 
-    fn program(&mut self) -> Result<Vec<Statement>> {
-        let mut statements = vec![];
-        while let Ok(statement) = self.statement() {
-            statements.push(statement);
+    fn declaration(&mut self) -> Result<Declaration> {
+        let declaration = if self.peek().token_type == TokenType::Var {
+            self.advance();
+            let identifier = match self.peek().token_type {
+                TokenType::Identifier(_) => self.peek().token_type.clone(),
+                _ => bail!("Expected identfier after var.")
+            };
+            self.advance();
+            let expr = match self.peek().token_type {
+                TokenType::Equal => {
+                    self.advance();
+                    let expr = self.expression()?;
+                    Some(expr)
+                }
+                _ => None
+            };
+            self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
+            Declaration::Variable(Identifier(identifier), expr)
+        } else {
+            Declaration::Statement(self.statement()?)
+        };
+        Ok(declaration)
+    }
+
+    fn program(&mut self) -> Result<Vec<Declaration>> {
+        let mut declarations = vec![];
+        while let Ok(declaration) = self.declaration() {
+            declarations.push(declaration);
             if self.is_at_end() {
                 break;
             }
         }
-        Ok(statements)
+        Ok(declarations)
     }
 
     fn synchronize(&mut self) -> Result<()> {
@@ -170,7 +198,7 @@ impl Parser {
         self.tokens[self.current - 1].clone()
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Statement>> {
+    pub fn parse(&mut self) -> Result<Vec<Declaration>> {
         self.program()
     }
 }
