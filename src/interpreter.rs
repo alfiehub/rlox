@@ -33,14 +33,54 @@ impl Display for LoxType {
     }
 }
 
+#[derive(Clone, Debug)]
+struct Environment {
+    pub values: HashMap<String, LoxType>,
+    enclosing: Option<Box<Environment>>,
+}
+
+impl Environment {
+    fn new(enclosing: Option<Box<Environment>>) -> Self {
+        Self {
+            values: HashMap::new(),
+            enclosing
+        }
+    }
+
+    fn nest(&self) -> Self {
+        Self::new(Some(Box::new(self.clone())))
+    }
+
+    fn unnest(&self) -> Self {
+        *self.enclosing.as_ref().unwrap().clone()
+    }
+
+    fn get(&self, key: &str) -> Option<LoxType> {
+        match self.values.get(key) {
+            Some(value) => Some(value.clone()),
+            None => {
+                if let Some(enclosing) = &self.enclosing {
+                    enclosing.get(key)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn insert(&mut self, key: String, value: LoxType) {
+        self.values.insert(key, value);
+    }
+}
+
 pub struct Interpreter {
-    environment: HashMap<String, LoxType>
+    environment: Environment
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: HashMap::new(),
+            environment: Environment::new(None)
         }
     }
 
@@ -71,12 +111,17 @@ impl Interpreter {
     }
 
     fn evaluate_statement(&mut self, stmt: &Statement) -> Result<LoxType> {
-        let value = match stmt {
-            Statement::Expression(expr) | Statement::Print(expr) => self.evaluate_expression(expr)?
+        match stmt {
+            Statement::Expression(expr) => { self.evaluate_expression(expr)?; },
+            Statement::Print(expr) => println!("{}", self.evaluate_expression(expr)?),
+            Statement::Block(declarations) => {
+                self.environment = self.environment.nest();
+                for decl in declarations {
+                    self.evaluate_declaration(decl)?;
+                }
+                self.environment = self.environment.unnest();
+            }
         };
-        if let Statement::Print(expr) = stmt {
-            println!("{}", value);
-        }
         Ok(LoxType::Nil)
     }
 
@@ -91,7 +136,7 @@ impl Interpreter {
                 TokenType::Nil => Ok(LoxType::Nil),
                 TokenType::Identifier(identifier) => {
                     if let Some(value) = self.environment.get(&identifier) {
-                        Ok((*value).clone())
+                        Ok(value)
                     } else {
                         bail!("Undefined variable '{}'", identifier);
                     }

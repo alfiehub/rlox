@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-use crate::ast::{Expression, Literal};
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     // Single character tokens

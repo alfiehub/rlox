@@ -57,14 +57,14 @@ impl Parser {
             TokenType::LeftParen => {
                 self.advance();
                 let expr = self.expression()?;
-                self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
+                self.consume(TokenType::RightParen, "Expected ')' after expression.")?;
                 Expression::Grouping(Box::new(expr))
             },
             TokenType::Identifier(_) => {
                 self.advance();
                 Expression::Literal(Literal(token.token_type.clone()))
             },
-            _ => bail!("Expect expression."),
+            _ => bail!("Expected expression."),
         };
         Ok(expr)
     }
@@ -109,7 +109,7 @@ impl Parser {
             self.advance();
             let operator = self.previous();
             let right = self.term()?;
-            return Ok(Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right)));
+            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
         }
         Ok(expr)
     }
@@ -129,11 +129,28 @@ impl Parser {
         let statement = match self.peek().token_type {
             TokenType::Print => {
                 self.advance();
-                Statement::Print(self.expression()?)
+                let expr = self.expression()?;
+                self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
+                Statement::Print(expr)
             }
-            _ => Statement::Expression(self.expression()?)
+            TokenType::LeftBrace => {
+                self.advance();
+                let mut statements = vec![];
+                while let Ok(stmt) = self.declaration() {
+                    statements.push(stmt);
+                    if self.is_at_end() {
+                        break;
+                    }
+                }
+                self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
+                Statement::Block(statements)
+            }
+            _ => {
+                let expr = self.expression()?;
+                self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
+                Statement::Expression(expr)
+            }
         };
-        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
         Ok(statement)
     }
 
@@ -153,7 +170,7 @@ impl Parser {
                 }
                 _ => None
             };
-            self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
+            self.consume(TokenType::Semicolon, "Expected ';' after variable declaration.")?;
             Declaration::Variable(Identifier(identifier), expr)
         } else {
             Declaration::Statement(self.statement()?)
@@ -163,10 +180,18 @@ impl Parser {
 
     fn program(&mut self) -> Result<Vec<Declaration>> {
         let mut declarations = vec![];
-        while let Ok(declaration) = self.declaration() {
-            declarations.push(declaration);
-            if self.is_at_end() {
-                break;
+        loop {
+            match self.declaration() {
+                Ok(declaration) => {
+                    declarations.push(declaration);
+                    if self.is_at_end() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    self.synchronize()?;
+                }
             }
         }
         Ok(declarations)

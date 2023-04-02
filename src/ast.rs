@@ -30,6 +30,7 @@ pub enum Expression {
 pub enum Statement {
     Expression(Expression),
     Print(Expression),
+    Block(Vec<Declaration>),
 }
 
 #[derive(Debug)]
@@ -38,11 +39,21 @@ pub enum Declaration {
     Statement(Statement)
 }
 
+impl Display for Declaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Declaration::Variable(identifier, expression) => write!(f, "(var {} {})", identifier.0, expression.as_ref().map_or("None".to_string(), |f| f.to_string())),
+            Declaration::Statement(statement) => write!(f, "{}", statement)
+        }
+    }
+}
+
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::Expression(expression) => write!(f, "{}", expression),
             Statement::Print(expression) => write!(f, "(print {})", expression),
+            Statement::Block(statements) => write!(f, "{{ {:?} }}", statements),
         }
     }
 }
