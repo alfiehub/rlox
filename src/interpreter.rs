@@ -1,8 +1,11 @@
-use std::{fmt::Display, collections::HashMap};
+use std::{collections::HashMap, fmt::Display};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
-use crate::{ast::{Expression, Statement, Declaration}, token::TokenType};
+use crate::{
+    ast::{Declaration, Expression, Statement},
+    token::TokenType,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 enum LoxType {
@@ -59,8 +62,8 @@ impl Environment {
             if let Some(value) = scope.get(key) {
                 return match value {
                     Some(value) => Ok(Some(value.clone())),
-                    None => bail!("Uninitialized variable '{}'.", key)
-                }
+                    None => bail!("Uninitialized variable '{}'.", key),
+                };
             }
         }
         bail!("Undefined variable '{}'.", key);
@@ -82,45 +85,43 @@ impl Environment {
 }
 
 pub struct Interpreter {
-    environment: Environment
+    environment: Environment,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: Environment::new()
+            environment: Environment::new(),
         }
     }
 
     pub fn interpret(&mut self, declarations: &[Declaration]) -> Result<()> {
         for decl in declarations {
             self.evaluate_declaration(decl)?;
-        };
+        }
         Ok(())
     }
 
     fn evaluate_declaration(&mut self, decl: &Declaration) -> Result<LoxType> {
         match decl {
             Declaration::Variable(identifier, expr_option) => {
-                let value = if let Some(expr) = expr_option {
-                    Some(self.evaluate_expression(expr)?)
-                } else {
-                    None
-                };
                 if let TokenType::Identifier(identifier) = &identifier.0 {
+                    let value = expr_option.as_ref().map(|expr| self.evaluate_expression(expr)).transpose()?;
                     self.environment.create(identifier.clone(), value);
                 } else {
                     bail!("Expected identifier, got {:?}", identifier);
                 }
                 Ok(LoxType::Nil)
-            },
+            }
             Declaration::Statement(stmt) => self.evaluate_statement(stmt),
         }
     }
 
     fn evaluate_statement(&mut self, stmt: &Statement) -> Result<LoxType> {
         match stmt {
-            Statement::Expression(expr) => { self.evaluate_expression(expr)?; },
+            Statement::Expression(expr) => {
+                self.evaluate_expression(expr)?;
+            }
             Statement::Print(expr) => println!("{}", self.evaluate_expression(expr)?),
             Statement::Block(declarations) => {
                 self.environment.nest();
@@ -134,72 +135,70 @@ impl Interpreter {
     }
 
     fn evaluate_expression(&mut self, expr: &Expression) -> Result<LoxType> {
-        match expr {
+        Ok(match expr {
             // TODO: avoid cloning here?
             Expression::Literal(literal) => match literal.0.clone() {
-                TokenType::Number(n) => Ok(LoxType::Number(n)),
-                TokenType::String(s) => Ok(LoxType::String(s)),
-                TokenType::True => Ok(LoxType::Boolean(true)),
-                TokenType::False => Ok(LoxType::Boolean(false)),
-                TokenType::Nil => Ok(LoxType::Nil),
-                TokenType::Identifier(identifier) => {
-                    match self.environment.get(&identifier)? {
-                        Some(value) => Ok(value),
-                        None => bail!("Uninitialized variable '{}'", identifier),
-                    }
+                TokenType::Number(n) => LoxType::Number(n),
+                TokenType::String(s) => LoxType::String(s),
+                TokenType::True => LoxType::Boolean(true),
+                TokenType::False => LoxType::Boolean(false),
+                TokenType::Nil => LoxType::Nil,
+                TokenType::Identifier(identifier) => match self.environment.get(&identifier)? {
+                    Some(value) => value,
+                    None => bail!("Uninitialized variable '{}'", identifier),
                 },
                 _ => bail!("Invalid literal"),
             },
-            Expression::Grouping(expr) => self.evaluate_expression(expr),
+            Expression::Grouping(expr) => self.evaluate_expression(expr)?,
             Expression::Unary(operator, expr) => {
                 let right = self.evaluate_expression(expr)?;
                 match operator.0 {
-                    TokenType::Bang => Ok(LoxType::Boolean(!right.is_truthy())),
+                    TokenType::Bang => LoxType::Boolean(!right.is_truthy()),
                     TokenType::Minus => match right {
-                        LoxType::Number(n) => Ok(LoxType::Number(-n)),
+                        LoxType::Number(n) => LoxType::Number(-n),
                         _ => bail!("Operand must be a number."),
                     },
                     _ => bail!("Invalid unary operator"),
                 }
-            },
+            }
             Expression::Binary(left, operator, right) => {
                 let left = self.evaluate_expression(left)?;
                 let right = self.evaluate_expression(right)?;
 
                 match (left, right) {
                     (LoxType::Number(left), LoxType::Number(right)) => match operator.0 {
-                        TokenType::Minus => Ok(LoxType::Number(left - right)),
-                        TokenType::Slash => Ok(LoxType::Number(left / right)),
-                        TokenType::Star => Ok(LoxType::Number(left * right)),
-                        TokenType::Plus => Ok(LoxType::Number(left + right)),
-                        TokenType::Greater => Ok(LoxType::Boolean(left > right)),
-                        TokenType::GreaterEqual => Ok(LoxType::Boolean(left >= right)),
-                        TokenType::Less => Ok(LoxType::Boolean(left < right)),
-                        TokenType::LessEqual => Ok(LoxType::Boolean(left <= right)),
-                        TokenType::BangEqual => Ok(LoxType::Boolean(left != right)),
-                        TokenType::EqualEqual => Ok(LoxType::Boolean(left == right)),
+                        TokenType::Minus => LoxType::Number(left - right),
+                        TokenType::Slash => LoxType::Number(left / right),
+                        TokenType::Star => LoxType::Number(left * right),
+                        TokenType::Plus => LoxType::Number(left + right),
+                        TokenType::Greater => LoxType::Boolean(left > right),
+                        TokenType::GreaterEqual => LoxType::Boolean(left >= right),
+                        TokenType::Less => LoxType::Boolean(left < right),
+                        TokenType::LessEqual => LoxType::Boolean(left <= right),
+                        TokenType::BangEqual => LoxType::Boolean(left != right),
+                        TokenType::EqualEqual => LoxType::Boolean(left == right),
                         _ => bail!("Invalid binary operator number."),
                     },
                     (LoxType::String(left), LoxType::String(right)) => match operator.0 {
-                        TokenType::Plus => Ok(LoxType::String(format!("{}{}", left, right))),
-                        TokenType::EqualEqual => Ok(LoxType::Boolean(left == right)),
-                        TokenType::BangEqual => Ok(LoxType::Boolean(left != right)),
+                        TokenType::Plus => LoxType::String(format!("{}{}", left, right)),
+                        TokenType::EqualEqual => LoxType::Boolean(left == right),
+                        TokenType::BangEqual => LoxType::Boolean(left != right),
                         _ => bail!("Invalid binary operator for String."),
                     },
                     (LoxType::Boolean(left), LoxType::Boolean(right)) => match operator.0 {
-                        TokenType::EqualEqual => Ok(LoxType::Boolean(left == right)),
-                        TokenType::BangEqual => Ok(LoxType::Boolean(left != right)),
+                        TokenType::EqualEqual => LoxType::Boolean(left == right),
+                        TokenType::BangEqual => LoxType::Boolean(left != right),
                         _ => bail!("Invalid binary operator for Boolean."),
                     },
                     (LoxType::Nil, LoxType::Nil) => match operator.0 {
-                        TokenType::EqualEqual => Ok(LoxType::Boolean(true)),
-                        TokenType::BangEqual => Ok(LoxType::Boolean(false)),
+                        TokenType::EqualEqual => LoxType::Boolean(true),
+                        TokenType::BangEqual => LoxType::Boolean(false),
                         _ => bail!("Invalid binary operator for Nil."),
                     },
                     // TODO: allow number == string
                     _ => bail!("Invalid binary operator."),
                 }
-            },
+            }
             Expression::Assignment(identifier, expr) => {
                 let value = self.evaluate_expression(expr)?;
                 if let TokenType::Identifier(identifier) = &identifier.0 {
@@ -207,17 +206,17 @@ impl Interpreter {
                 } else {
                     bail!("Expected identifier, got {:?}", identifier);
                 }
-                Ok(LoxType::Nil)
+                LoxType::Nil
             }
             _ => bail!("Not implemented"),
-        }
+        })
     }
 }
 
 mod tests {
 
-    use crate::scanner::Scanner;
     use crate::parser::Parser;
+    use crate::scanner::Scanner;
 
     use super::*;
 
@@ -254,7 +253,11 @@ mod tests {
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
             let result = Interpreter::new().evaluate_expression(&expr).unwrap();
-            assert_eq!(result, *expected_result, "\"{}\" resulted in {}", expression, result);
+            assert_eq!(
+                result, *expected_result,
+                "\"{}\" resulted in {}",
+                expression, result
+            );
         }
     }
 
@@ -278,7 +281,13 @@ mod tests {
             let mut parser = Parser::new(tokens);
             let expr = parser.statement().unwrap();
             let result = Interpreter::new().evaluate_statement(&expr).unwrap();
-            assert_eq!(result, LoxType::Nil, "\"{}\" resulted in {}", expression, result);
+            assert_eq!(
+                result,
+                LoxType::Nil,
+                "\"{}\" resulted in {}",
+                expression,
+                result
+            );
         }
     }
 }
