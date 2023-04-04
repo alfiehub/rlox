@@ -5,11 +5,7 @@ use crate::token::{TokenType, Token};
 pub struct Scanner {}
 
 impl Scanner {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub fn scan(&self, source: &str) -> Result<Vec<Token>> {
+    pub fn scan(source: &str) -> Result<Vec<Token>> {
         let mut tokens = Vec::new();
         let mut line = 1;
 
@@ -150,48 +146,42 @@ mod tests {
     #[test]
     fn test_scan_simple() {
         let source = "( ) { } , . - + ; * ! != = == < <= > >= / //";
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(source).unwrap();
+        let tokens = Scanner::scan(source).unwrap();
         assert_eq!(tokens.len(), 19);
     }
 
     #[test]
     fn test_scan_string() {
         let source = "\"hello world\"";
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(source).unwrap();
+        let tokens = Scanner::scan(source).unwrap();
         assert_eq!(tokens.first().unwrap().token_type, TokenType::String("hello world".to_string()));
     }
 
     #[test]
     fn test_number() {
         let source = "123.45";
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(source).unwrap();
+        let tokens = Scanner::scan(source).unwrap();
         assert_eq!(tokens.first().unwrap().token_type, TokenType::Number(123.45));
     }
 
     #[test]
     fn test_block_comment() {
         let source = "/* hello world */";
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(source).unwrap();
+        let tokens = Scanner::scan(source).unwrap();
         assert_eq!(tokens.len(), 0);
     }
 
     #[test]
     fn test_nested_block_comment() {
         let source = "/* hello /* world */ */";
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(source).unwrap();
+        let tokens = Scanner::scan(source).unwrap();
         assert_eq!(tokens.len(), 0);
     }
 
     #[test]
     fn test_deeply_nested_block_comment() {
         let source = "/* hello /* world /* /* /* lmao */ */ //// **** \n\n\n\n /* */ */ */ */";
-        let scanner = Scanner::new();
-        let tokens = scanner.scan(source).unwrap();
+        let tokens = Scanner::scan(source).unwrap();
         assert_eq!(tokens.len(), 0);
     }
 }

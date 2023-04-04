@@ -35,41 +35,36 @@ impl Display for LoxType {
 
 #[derive(Clone, Debug)]
 struct Environment {
-    pub values: HashMap<String, LoxType>,
-    enclosing: Option<Box<Environment>>,
+    values: Vec<HashMap<String, LoxType>>,
 }
 
 impl Environment {
-    fn new(enclosing: Option<Box<Environment>>) -> Self {
+    fn new() -> Self {
         Self {
-            values: HashMap::new(),
-            enclosing
+            values: vec![HashMap::new()],
         }
     }
 
-    fn nest(&self) -> Self {
-        Self::new(Some(Box::new(self.clone())))
+    fn nest(&mut self) {
+        self.values.push(HashMap::new());
     }
 
-    fn unnest(&self) -> Self {
-        *self.enclosing.as_ref().unwrap().clone()
+    fn unnest(&mut self) {
+        self.values.pop();
     }
 
     fn get(&self, key: &str) -> Option<LoxType> {
-        match self.values.get(key) {
-            Some(value) => Some(value.clone()),
-            None => {
-                if let Some(enclosing) = &self.enclosing {
-                    enclosing.get(key)
-                } else {
-                    None
-                }
+        // Loop backwards until value
+        for scope in self.values.iter().rev() {
+            if let Some(value) = scope.get(key) {
+                return Some(value.clone());
             }
         }
+        None
     }
 
     fn insert(&mut self, key: String, value: LoxType) {
-        self.values.insert(key, value);
+        self.values.last_mut().unwrap().insert(key, value);
     }
 }
 
@@ -80,14 +75,14 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: Environment::new(None)
+            environment: Environment::new()
         }
     }
 
     pub fn interpret(&mut self, declarations: &[Declaration]) -> Result<()> {
         for decl in declarations {
             self.evaluate_declaration(decl)?;
-        }
+        };
         Ok(())
     }
 
@@ -115,11 +110,11 @@ impl Interpreter {
             Statement::Expression(expr) => { self.evaluate_expression(expr)?; },
             Statement::Print(expr) => println!("{}", self.evaluate_expression(expr)?),
             Statement::Block(declarations) => {
-                self.environment = self.environment.nest();
+                self.environment.nest();
                 for decl in declarations {
                     self.evaluate_declaration(decl)?;
                 }
-                self.environment = self.environment.unnest();
+                self.environment.unnest();
             }
         };
         Ok(LoxType::Nil)
@@ -247,8 +242,7 @@ mod tests {
             LoxType::Boolean(false),
         ];
         for (expression, expected_result) in expressions.iter().zip(results.iter()) {
-            let scanner = Scanner::new();
-            let tokens = scanner.scan(expression).unwrap();
+            let tokens = Scanner::scan(expression).unwrap();
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
             let result = Interpreter::new().evaluate_expression(&expr).unwrap();
@@ -272,8 +266,7 @@ mod tests {
             "print \"hello\" == \"world\";",
         ];
         for expression in expressions.iter() {
-            let scanner = Scanner::new();
-            let tokens = scanner.scan(expression).unwrap();
+            let tokens = Scanner::scan(expression).unwrap();
             let mut parser = Parser::new(tokens);
             let expr = parser.statement().unwrap();
             let result = Interpreter::new().evaluate_statement(&expr).unwrap();

@@ -17,8 +17,7 @@ struct Cli {
 }
 
 fn run(code: String, interpreter: &mut Interpreter) -> Result<()> {
-    let scanner = scanner::Scanner::new();
-    let tokens = scanner.scan(&code)?;
+    let tokens = scanner::Scanner::scan(&code)?;
     let mut parser = parser::Parser::new(tokens);
     let ast = parser.parse()?;
     interpreter.interpret(&ast)?;

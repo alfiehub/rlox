@@ -263,9 +263,8 @@ mod tests {
             "(, (+ 1 2) (+ 3 4))",
             "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)"
         ];
-        let scanner = Scanner::new();
         for (code, result) in codes.iter().zip(results.iter()) {
-            let tokens = scanner.scan(code).unwrap();
+            let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
             assert_eq!(expr.to_string(), *result);
@@ -286,9 +285,8 @@ mod tests {
             "(print (, (+ 1 2) (+ 3 4)))",
             "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))"
         ];
-        let scanner = Scanner::new();
         for (code, result) in codes.iter().zip(results.iter()) {
-            let tokens = scanner.scan(code).unwrap();
+            let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);
             let statement = parser.statement().unwrap();
             assert_eq!(statement.to_string(), *result, "\"{}\" yielded {}", code, statement.to_string());
