@@ -33,9 +33,9 @@ impl Display for LoxType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Environment {
-    values: Vec<HashMap<String, LoxType>>,
+    values: Vec<HashMap<String, Option<LoxType>>>,
 }
 
 impl Environment {
@@ -53,18 +53,31 @@ impl Environment {
         self.values.pop();
     }
 
-    fn get(&self, key: &str) -> Option<LoxType> {
+    fn get(&self, key: &str) -> Result<Option<LoxType>> {
         // Loop backwards until value
         for scope in self.values.iter().rev() {
             if let Some(value) = scope.get(key) {
-                return Some(value.clone());
+                return match value {
+                    Some(value) => Ok(Some(value.clone())),
+                    None => bail!("Uninitialized variable '{}'.", key)
+                }
             }
         }
-        None
+        bail!("Undefined variable '{}'.", key);
     }
 
-    fn insert(&mut self, key: String, value: LoxType) {
+    fn create(&mut self, key: String, value: Option<LoxType>) {
         self.values.last_mut().unwrap().insert(key, value);
+    }
+
+    fn assign(&mut self, key: String, value: Option<LoxType>) -> Result<()> {
+        for scope in self.values.iter_mut().rev() {
+            if scope.contains_key(&key) {
+                scope.insert(key, value);
+                return Ok(());
+            }
+        }
+        bail!("Undefined variable '{}'.", key);
     }
 }
 
@@ -90,12 +103,12 @@ impl Interpreter {
         match decl {
             Declaration::Variable(identifier, expr_option) => {
                 let value = if let Some(expr) = expr_option {
-                    self.evaluate_expression(expr)?
+                    Some(self.evaluate_expression(expr)?)
                 } else {
-                    LoxType::Nil
+                    None
                 };
                 if let TokenType::Identifier(identifier) = &identifier.0 {
-                    self.environment.insert(identifier.clone(), value);
+                    self.environment.create(identifier.clone(), value);
                 } else {
                     bail!("Expected identifier, got {:?}", identifier);
                 }
@@ -130,10 +143,9 @@ impl Interpreter {
                 TokenType::False => Ok(LoxType::Boolean(false)),
                 TokenType::Nil => Ok(LoxType::Nil),
                 TokenType::Identifier(identifier) => {
-                    if let Some(value) = self.environment.get(&identifier) {
-                        Ok(value)
-                    } else {
-                        bail!("Undefined variable '{}'", identifier);
+                    match self.environment.get(&identifier)? {
+                        Some(value) => Ok(value),
+                        None => bail!("Uninitialized variable '{}'", identifier),
                     }
                 },
                 _ => bail!("Invalid literal"),
@@ -191,11 +203,7 @@ impl Interpreter {
             Expression::Assignment(identifier, expr) => {
                 let value = self.evaluate_expression(expr)?;
                 if let TokenType::Identifier(identifier) = &identifier.0 {
-                    if self.environment.get(identifier) == None {
-                        bail!("Undefined variable '{}'", identifier);
-                    } else {
-                        self.environment.insert(identifier.clone(), value);
-                    }
+                    self.environment.assign(identifier.clone(), Some(value))?;
                 } else {
                     bail!("Expected identifier, got {:?}", identifier);
                 }
