@@ -29,14 +29,48 @@ impl Parser {
         self.assignment()
     }
 
-    pub fn assignment(&mut self) -> Result<Expression> {
+    fn logic_or(&mut self) -> Result<Expression> {
+        let expr = self.logic_and()?;
+        if let TokenType::Or = self.peek().token_type {
+            self.advance();
+            let right = self.logic_and()?;
+            Ok(Expression::Logical(
+                Box::new(expr),
+                Operator(TokenType::Or),
+                Box::new(right),
+            ))
+        } else {
+            Ok(expr)
+        }
+
+    }
+
+    fn logic_and(&mut self) -> Result<Expression> {
         let expr = self.equality()?;
+        if let TokenType::And = self.peek().token_type {
+            self.advance();
+            let right = self.equality()?;
+            Ok(Expression::Logical(
+                Box::new(expr),
+                Operator(TokenType::And),
+                Box::new(right),
+            ))
+        } else {
+            Ok(expr)
+        }
+    }
+
+    pub fn assignment(&mut self) -> Result<Expression> {
+        let expr = self.logic_or()?;
         match self.peek().token_type {
             TokenType::Equal => {
                 self.advance();
                 let value = self.assignment()?;
                 if let Expression::Literal(Literal(TokenType::Identifier(identifier))) = expr {
-                    return Ok(Expression::Assignment(Identifier(TokenType::Identifier(identifier)), Box::new(value)));
+                    return Ok(Expression::Assignment(
+                        Identifier(TokenType::Identifier(identifier)),
+                        Box::new(value),
+                    ));
                 } else {
                     bail!("Invalid assignment target.");
                 }
@@ -55,17 +89,17 @@ impl Parser {
             | TokenType::String(_) => {
                 self.advance();
                 Expression::Literal(Literal(token.token_type.clone()))
-            },
+            }
             TokenType::LeftParen => {
                 self.advance();
                 let expr = self.expression()?;
                 self.consume(TokenType::RightParen, "Expected ')' after expression.")?;
                 Expression::Grouping(Box::new(expr))
-            },
+            }
             TokenType::Identifier(_) => {
                 self.advance();
                 Expression::Literal(Literal(token.token_type.clone()))
-            },
+            }
             _ => bail!("Expected expression @ line: {}", token.line),
         };
         Ok(expr)
@@ -89,7 +123,11 @@ impl Parser {
             self.advance();
             let operator = self.previous();
             let right = self.unary()?;
-            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+            expr = Expression::Binary(
+                Box::new(expr),
+                Operator(operator.token_type),
+                Box::new(right),
+            );
         }
         Ok(expr)
     }
@@ -100,29 +138,47 @@ impl Parser {
             self.advance();
             let operator = self.previous();
             let right = self.factor()?;
-            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+            expr = Expression::Binary(
+                Box::new(expr),
+                Operator(operator.token_type),
+                Box::new(right),
+            );
         }
         Ok(expr)
     }
 
     fn comparison(&mut self) -> Result<Expression> {
         let mut expr = self.term()?;
-        while let TokenType::Greater | TokenType::GreaterEqual | TokenType::Less | TokenType::LessEqual = self.peek().token_type {
+        while let TokenType::Greater
+        | TokenType::GreaterEqual
+        | TokenType::Less
+        | TokenType::LessEqual = self.peek().token_type
+        {
             self.advance();
             let operator = self.previous();
             let right = self.term()?;
-            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+            expr = Expression::Binary(
+                Box::new(expr),
+                Operator(operator.token_type),
+                Box::new(right),
+            );
         }
         Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expression> {
         let mut expr = self.comparison()?;
-        while let TokenType::BangEqual | TokenType::EqualEqual | TokenType::Comma = self.peek().token_type {
+        while let TokenType::BangEqual | TokenType::EqualEqual | TokenType::Comma =
+            self.peek().token_type
+        {
             self.advance();
             let operator = self.previous();
             let right = self.comparison()?;
-            expr = Expression::Binary(Box::new(expr), Operator(operator.token_type), Box::new(right));
+            expr = Expression::Binary(
+                Box::new(expr),
+                Operator(operator.token_type),
+                Box::new(right),
+            );
         }
         Ok(expr)
     }
@@ -165,8 +221,7 @@ impl Parser {
                     None
                 };
                 Statement::If(condition, Box::new(then_branch), else_branch.map(Box::new))
-
-            },
+            }
             _ => {
                 let expr = self.expression()?;
                 self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
@@ -181,7 +236,7 @@ impl Parser {
             self.advance();
             let identifier = match self.peek().token_type {
                 TokenType::Identifier(_) => self.peek().token_type.clone(),
-                _ => bail!("Expected identfier after var.")
+                _ => bail!("Expected identfier after var."),
             };
             self.advance();
             let expr = match self.peek().token_type {
@@ -190,9 +245,12 @@ impl Parser {
                     let expr = self.expression()?;
                     Some(expr)
                 }
-                _ => None
+                _ => None,
             };
-            self.consume(TokenType::Semicolon, "Expected ';' after variable declaration.")?;
+            self.consume(
+                TokenType::Semicolon,
+                "Expected ';' after variable declaration.",
+            )?;
             Declaration::Variable(Identifier(identifier), expr)
         } else {
             Declaration::Statement(self.statement()?)
@@ -277,13 +335,13 @@ mod tests {
             "1 + 2 * 3",
             "1 + 2 * 3 + 4",
             "1 + 2, 3 + 4",
-            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8"
+            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8",
         ];
         let results = vec![
             "(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
             "(, (+ 1 2) (+ 3 4))",
-            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)"
+            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)",
         ];
         for (code, result) in codes.iter().zip(results.iter()) {
             let tokens = Scanner::scan(code).unwrap();
@@ -299,19 +357,25 @@ mod tests {
             "1 + 2 * 3;",
             "1 + 2 * 3 + 4;",
             "print 1 + 2, 3 + 4;",
-            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;"
+            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;",
         ];
         let results = vec![
             "(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
             "(print (, (+ 1 2) (+ 3 4)))",
-            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))"
+            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))",
         ];
         for (code, result) in codes.iter().zip(results.iter()) {
             let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);
             let statement = parser.statement().unwrap();
-            assert_eq!(statement.to_string(), *result, "\"{}\" yielded {}", code, statement.to_string());
+            assert_eq!(
+                statement.to_string(),
+                *result,
+                "\"{}\" yielded {}",
+                code,
+                statement.to_string()
+            );
         }
     }
 }

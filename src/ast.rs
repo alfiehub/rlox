@@ -21,6 +21,7 @@ pub struct Operator(pub TokenType);
 pub enum Expression {
     Unary(UnaryOperator, Box<Expression>),
     Binary(Box<Expression>, Operator, Box<Expression>),
+    Logical(Box<Expression>, Operator, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(Literal),
     Assignment(Identifier, Box<Expression>),
@@ -82,6 +83,9 @@ impl Display for Expression {
                     parenthesize(&operator.0.to_string(), &[expression])
                 }
                 Expression::Binary(left, operator, right) => {
+                    parenthesize(&operator.0.to_string(), &[left, right])
+                }
+                Expression::Logical(left, operator, right) => {
                     parenthesize(&operator.0.to_string(), &[left, right])
                 }
                 Expression::Grouping(expression) => parenthesize("group", &[expression]),

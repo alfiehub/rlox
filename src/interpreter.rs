@@ -216,6 +216,26 @@ impl Interpreter {
                 }
                 LoxType::Nil
             }
+            Expression::Logical(left, operator, right) => {
+                let left = self.evaluate_expression(left)?;
+                match operator.0 {
+                    TokenType::Or => {
+                        if left.is_truthy() {
+                            left
+                        } else {
+                            self.evaluate_expression(right)?
+                        }
+                    }
+                    TokenType::And => {
+                        if !left.is_truthy() {
+                            left
+                        } else {
+                            self.evaluate_expression(right)?
+                        }
+                    }
+                    _ => bail!("Invalid logical operator"),
+                }
+            }
             _ => bail!("Not implemented"),
         })
     }
