@@ -1,9 +1,22 @@
 use anyhow::{bail, Result};
 
 use crate::{
-    ast::{Expression, Literal, Operator, UnaryOperator, Statement, Declaration, Identifier},
+    ast::{Declaration, Expression, Identifier, Literal, Operator, Statement, UnaryOperator},
     token::{Token, TokenType},
 };
+
+#[derive(Debug, thiserror::Error)]
+enum ParserError {
+    #[error("Unexpected token on line {line}. Found '{found}' instead of '{expected}'. {message}")]
+    UnexpectedToken {
+        line: usize,
+        expected: TokenType,
+        found: TokenType,
+        message: String,
+    },
+    #[error("Unable to synchronize parser.")]
+    Synchronize,
+}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -21,7 +34,12 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            bail!("Error on line: {} -> {}", token.line, message.to_owned())
+            bail!(ParserError::UnexpectedToken {
+                line: token.line,
+                expected: token_type,
+                found: token.token_type,
+                message: message.to_string(),
+            });
         }
     }
 
@@ -297,7 +315,7 @@ impl Parser {
                 self.advance();
             }
         }
-        bail!("Unable to synchronize, at end.")
+        bail!(ParserError::Synchronize)
     }
 
     fn is_at_end(&self) -> bool {
