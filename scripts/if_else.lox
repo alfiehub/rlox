@@ -1,0 +1,12 @@
+var errorString = "this should never print";
+if (true) {
+  print "true is true";
+} else {
+  print errorString;
+}
+
+if (false) {
+  print "this should never print";
+} else {
+  print errorString;
+}

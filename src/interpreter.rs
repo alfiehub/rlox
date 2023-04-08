@@ -130,6 +130,14 @@ impl Interpreter {
                 }
                 self.environment.unnest();
             }
+            Statement::If(condition, then_branch, else_branch) => {
+                if self.evaluate_expression(condition)?.is_truthy() {
+                    self.evaluate_statement(then_branch)?;
+                } else if let Some(else_branch) = else_branch {
+                    self.evaluate_statement(else_branch)?;
+                }
+            },
+
         };
         Ok(LoxType::Nil)
     }

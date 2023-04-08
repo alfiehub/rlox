@@ -30,6 +30,7 @@ pub enum Expression {
 pub enum Statement {
     Expression(Expression),
     Print(Expression),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
     Block(Vec<Declaration>),
 }
 
@@ -54,6 +55,7 @@ impl Display for Statement {
             Statement::Expression(expression) => write!(f, "{}", expression),
             Statement::Print(expression) => write!(f, "(print {})", expression),
             Statement::Block(statements) => write!(f, "{{ {:?} }}", statements),
+            _ => write!(f, "Not implemented")
         }
     }
 }

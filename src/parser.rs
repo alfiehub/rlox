@@ -16,11 +16,13 @@ impl Parser {
     }
 
     fn consume(&mut self, token_type: TokenType, message: &str) -> Result<()> {
-        if self.peek().token_type == token_type {
+        let token = self.peek();
+        if token.token_type == token_type {
             self.advance();
-            return Ok(());
+            Ok(())
+        } else {
+            bail!("Error on line: {} -> {}", token.line, message.to_owned())
         }
-        bail!(message.to_owned());
     }
 
     pub fn expression(&mut self) -> Result<Expression> {
@@ -64,7 +66,7 @@ impl Parser {
                 self.advance();
                 Expression::Literal(Literal(token.token_type.clone()))
             },
-            _ => bail!("Expected expression."),
+            _ => bail!("Expected expression @ line: {}", token.line),
         };
         Ok(expr)
     }
@@ -136,15 +138,35 @@ impl Parser {
             TokenType::LeftBrace => {
                 self.advance();
                 let mut statements = vec![];
-                while let Ok(stmt) = self.declaration() {
+                loop {
+                    let stmt = self.declaration()?;
                     statements.push(stmt);
                     if self.is_at_end() {
+                        break;
+                    }
+                    if self.peek().token_type == TokenType::RightBrace {
                         break;
                     }
                 }
                 self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
                 Statement::Block(statements)
             }
+            TokenType::If => {
+                self.advance();
+                self.consume(TokenType::LeftParen, "Expected '(' after 'if'.")?;
+                let condition = self.expression()?;
+                self.consume(TokenType::RightParen, "Expected ')' after condition.")?;
+                let then_branch = self.statement()?;
+                let else_branch = if self.peek().token_type == TokenType::Else {
+                    self.advance();
+                    let stmt = self.statement()?;
+                    Some(stmt)
+                } else {
+                    None
+                };
+                Statement::If(condition, Box::new(then_branch), else_branch.map(Box::new))
+
+            },
             _ => {
                 let expr = self.expression()?;
                 self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
@@ -217,7 +239,7 @@ impl Parser {
                 self.advance();
             }
         }
-        Ok(())
+        bail!("Unable to synchronize, at end.")
     }
 
     fn is_at_end(&self) -> bool {
