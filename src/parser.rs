@@ -60,7 +60,6 @@ impl Parser {
         } else {
             Ok(expr)
         }
-
     }
 
     fn logic_and(&mut self) -> Result<Expression> {
@@ -239,6 +238,43 @@ impl Parser {
                     None
                 };
                 Statement::If(condition, Box::new(then_branch), else_branch.map(Box::new))
+            }
+            TokenType::While => {
+                self.advance();
+                self.consume(TokenType::LeftParen, "Expected '(' after 'while'.")?;
+                let condition = self.expression()?;
+                self.consume(TokenType::RightParen, "Expected ')' after condition.")?;
+                let body = self.statement()?;
+                Statement::While(condition, Box::new(body))
+            }
+            TokenType::For => {
+                self.advance();
+                self.consume(TokenType::LeftParen, "Expected '(' after 'for'.")?;
+                let initializer = if self.peek().token_type == TokenType::Semicolon {
+                    self.advance();
+                    None
+                } else if self.peek().token_type == TokenType::Var {
+                    Some(self.declaration()?)
+                } else {
+                    Some(self.expression()?.into())
+                };
+                let condition = self.expression().ok();
+                self.consume(TokenType::Semicolon, "Expected ';' after condition.")?;
+                let increment = self.expression().ok();
+                self.consume(TokenType::RightParen, "Expected ')' after ???.")?;
+                let mut body = self.statement()?;
+
+                if let Some(increment) = increment {
+                    body = Statement::Block(vec![body.into(), increment.into()])
+                };
+                if let Some(condition) = condition {
+                    body = Statement::While(condition, Box::new(body))
+                };
+                if let Some(initializer) = initializer {
+                    body = Statement::Block(vec![initializer, body.into()])
+                };
+
+                body
             }
             _ => {
                 let expr = self.expression()?;

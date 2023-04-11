@@ -1,0 +1,17 @@
+// for loop
+for (var i = 0; i < 5; i = i + 1) {
+  print i;
+}
+
+// for loop with initalizer, but no increment
+for (var i = 10; i < 15;) {
+  print i;
+  i = i + 1;
+}
+
+// for loop with no initalizer or increment
+var i = 20;
+for (;i < 25;) {
+  print i;
+  i = i + 1;
+}

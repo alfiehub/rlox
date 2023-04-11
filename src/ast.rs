@@ -33,19 +33,27 @@ pub enum Statement {
     Print(Expression),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     Block(Vec<Declaration>),
+    While(Expression, Box<Statement>),
 }
 
 #[derive(Debug)]
 pub enum Declaration {
     Variable(Identifier, Option<Expression>),
-    Statement(Statement)
+    Statement(Statement),
 }
 
 impl Display for Declaration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Declaration::Variable(identifier, expression) => write!(f, "(var {} {})", identifier.0, expression.as_ref().map_or("None".to_string(), |f| f.to_string())),
-            Declaration::Statement(statement) => write!(f, "{}", statement)
+            Declaration::Variable(identifier, expression) => write!(
+                f,
+                "(var {} {})",
+                identifier.0,
+                expression
+                    .as_ref()
+                    .map_or("None".to_string(), |f| f.to_string())
+            ),
+            Declaration::Statement(statement) => write!(f, "{}", statement),
         }
     }
 }
@@ -56,8 +64,26 @@ impl Display for Statement {
             Statement::Expression(expression) => write!(f, "{}", expression),
             Statement::Print(expression) => write!(f, "(print {})", expression),
             Statement::Block(statements) => write!(f, "{{ {:?} }}", statements),
-            _ => write!(f, "Not implemented")
+            _ => write!(f, "Not implemented"),
         }
+    }
+}
+
+impl From<Statement> for Declaration {
+    fn from(value: Statement) -> Self {
+        Declaration::Statement(value)
+    }
+}
+
+impl From<Expression> for Statement {
+    fn from(value: Expression) -> Self {
+        Statement::Expression(value)
+    }
+}
+
+impl From<Expression> for Declaration {
+    fn from(value: Expression) -> Self {
+        Declaration::Statement(value.into())
     }
 }
 
@@ -90,7 +116,8 @@ impl Display for Expression {
                 }
                 Expression::Grouping(expression) => parenthesize("group", &[expression]),
                 Expression::Literal(literal) => literal.0.to_string(),
-                Expression::Assignment(identifier, expression) => parenthesize(&identifier.0.to_string(), &[expression])
+                Expression::Assignment(identifier, expression) =>
+                    parenthesize(&identifier.0.to_string(), &[expression]),
             }
         )
     }

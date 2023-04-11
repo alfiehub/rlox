@@ -106,7 +106,10 @@ impl Interpreter {
         match decl {
             Declaration::Variable(identifier, expr_option) => {
                 if let TokenType::Identifier(identifier) = &identifier.0 {
-                    let value = expr_option.as_ref().map(|expr| self.evaluate_expression(expr)).transpose()?;
+                    let value = expr_option
+                        .as_ref()
+                        .map(|expr| self.evaluate_expression(expr))
+                        .transpose()?;
                     self.environment.create(identifier.clone(), value);
                 } else {
                     bail!("Expected identifier, got {:?}", identifier);
@@ -136,8 +139,12 @@ impl Interpreter {
                 } else if let Some(else_branch) = else_branch {
                     self.evaluate_statement(else_branch)?;
                 }
-            },
-
+            }
+            Statement::While(condition, statement) => {
+                while self.evaluate_expression(condition)?.is_truthy() {
+                    self.evaluate_statement(statement)?;
+                }
+            }
         };
         Ok(LoxType::Nil)
     }

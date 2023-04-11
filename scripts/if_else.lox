@@ -8,5 +8,5 @@ if (true) {
 if (false) {
   print "this should never print";
 } else {
-  print errorString
+  print errorString;
 }
