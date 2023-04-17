@@ -5,19 +5,19 @@ use crate::token::{Token, TokenType};
 #[derive(Debug)]
 pub struct Program(pub Statement);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Literal(pub TokenType);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Identifier(pub TokenType);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnaryOperator(pub TokenType);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Operator(pub TokenType);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Unary(UnaryOperator, Box<Expression>),
     Binary(Box<Expression>, Operator, Box<Expression>),
@@ -25,18 +25,20 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Literal(Literal),
     Assignment(Identifier, Box<Expression>),
+    Call(Box<Expression>, Vec<Expression>)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
     Print(Expression),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     Block(Vec<Declaration>),
     While(Expression, Box<Statement>),
+    Function(Identifier, Vec<Identifier>, Box<Statement>)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Declaration {
     Variable(Identifier, Option<Expression>),
     Statement(Statement),
@@ -118,6 +120,7 @@ impl Display for Expression {
                 Expression::Literal(literal) => literal.0.to_string(),
                 Expression::Assignment(identifier, expression) =>
                     parenthesize(&identifier.0.to_string(), &[expression]),
+                _ => todo!("Not implemented")
             }
         )
     }

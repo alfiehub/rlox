@@ -1,0 +1,11 @@
+fun testA() {
+  print "testA";
+}
+
+testA();
+
+fun testB(a) {
+  print a;
+}
+
+testB("testB");

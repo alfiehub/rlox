@@ -117,7 +117,9 @@ impl Parser {
                 self.advance();
                 Expression::Literal(Literal(token.token_type.clone()))
             }
-            _ => bail!("Expected expression @ line: {}", token.line),
+            _ => {
+                bail!("Expected expression @ line: {}, found {:?}", token.line, token)
+            },
         };
         Ok(expr)
     }
@@ -130,9 +132,37 @@ impl Parser {
                 let right = self.unary()?;
                 Expression::Unary(UnaryOperator(operator.token_type), Box::new(right))
             }
-            _ => self.primary()?,
+            _ => self.call()?,
         })
     }
+
+    fn arguments(&mut self) -> Result<Vec<Expression>> {
+        let mut expressions = vec![
+            self.expression()?
+        ];
+        while let TokenType::Comma = self.peek().token_type {
+            self.advance();
+            expressions.push(self.expression()?);
+        }
+        Ok(expressions)
+
+    }
+
+    fn call(&mut self) -> Result<Expression> {
+        let mut expr = self.primary()?;
+        while let TokenType::LeftParen = self.peek().token_type {
+            self.advance();
+            let arguments = if TokenType::RightParen == self.peek().token_type {
+                vec![]
+            } else {
+                self.arguments()?
+            };
+            self.consume(TokenType::RightParen, "Expected ')' after arguments.")?;
+            expr = Expression::Call(expr.into(), arguments);
+        }
+        Ok(expr)
+    }
+
 
     fn factor(&mut self) -> Result<Expression> {
         let mut expr = self.unary()?;
@@ -285,6 +315,29 @@ impl Parser {
         Ok(statement)
     }
 
+    fn identifier(&mut self) -> Result<Identifier> {
+        let identifier = match self.peek().token_type {
+            TokenType::Identifier(_) => {
+                Identifier(self.peek().token_type.clone())
+            },
+            _ => bail!("Expected identfier."),
+        };
+        self.advance();
+        Ok(identifier)
+    }
+
+    fn parameters(&mut self) -> Result<Vec<Identifier>> {
+        let mut identifiers = vec![];
+        if let Ok(first_parameter) = self.identifier() {
+            identifiers.push(first_parameter);
+            while let TokenType::Comma = self.peek().token_type {
+                self.advance();
+                identifiers.push(self.identifier()?);
+            }
+        }
+        Ok(identifiers)
+    }
+
     fn declaration(&mut self) -> Result<Declaration> {
         let declaration = if self.peek().token_type == TokenType::Var {
             self.advance();
@@ -306,6 +359,20 @@ impl Parser {
                 "Expected ';' after variable declaration.",
             )?;
             Declaration::Variable(Identifier(identifier), expr)
+        } else if self.peek().token_type == TokenType::Fun {
+            self.advance();
+            let identifier = match self.peek().token_type {
+                TokenType::Identifier(_) => self.peek().token_type.clone(),
+                _ => bail!("Expected identfier after var."),
+            };
+            self.advance();
+
+            self.consume(TokenType::LeftParen, "Expected '(' after function identifier")?;
+            let parameters = self.parameters()?;
+            self.consume(TokenType::RightParen, "Expected ')' after function parameters")?;
+
+            let body = self.statement()?;
+            Declaration::Statement(Statement::Function(Identifier(identifier), parameters, body.into()))
         } else {
             Declaration::Statement(self.statement()?)
         };
