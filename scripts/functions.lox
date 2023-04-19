@@ -4,8 +4,10 @@ fun testA() {
 
 testA();
 
+var a = "should not print";
+
 fun testB(a) {
   print a;
 }
 
-testB("testB");
+testB("test" + "B");

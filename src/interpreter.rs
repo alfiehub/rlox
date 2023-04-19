@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, time::{SystemTime, UNIX_EPOCH}};
 
 use anyhow::{bail, Result};
 
@@ -8,12 +8,30 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+struct NativeFunction {
+    pub name: String,
+    pub arity: usize,
+    pub func: fn(Vec<LoxType>) -> LoxType,
+}
+
+impl NativeFunction {
+    fn new(name: String, arity: usize, func: fn(Vec<LoxType>) -> LoxType) -> Self { Self { name, arity, func } }
+}
+
+impl From<NativeFunction> for LoxType {
+    fn from(value: NativeFunction) -> Self {
+        Self::NativeFunction(value)
+    }
+}
+
+#[derive(Debug, Clone)]
 enum LoxType {
     Number(f64),
     String(String),
     Boolean(bool),
     Nil,
     Function(Statement),
+    NativeFunction(NativeFunction),
 }
 
 impl LoxType {
@@ -92,8 +110,20 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut environment = Environment::new();
+        environment.create(
+            "clock".to_string(),
+            Some(NativeFunction::new(
+                "clock".to_string(),
+                0,
+                |_| {
+                    LoxType::Number(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64)
+                },
+            ).into()),
+        );
+        environment.nest();
         Self {
-            environment: Environment::new(),
+            environment,
         }
     }
 
@@ -255,8 +285,27 @@ impl Interpreter {
                 self.environment.nest();
                 let function = self.evaluate_expression(expr)?;
                 let return_value = match function {
+                    LoxType::NativeFunction(native_func) => {
+                        if native_func.arity != arguments.len() {
+                            bail!(
+                                "Expected {} arguments for {} but got {}.",
+                                native_func.arity,
+                                native_func.name,
+                                arguments.len()
+                                )
+                        }
+                        let argument_values: Result<Vec<LoxType>> = arguments.iter().map(|a| self.evaluate_expression(a)).collect();
+                        (native_func.func)(argument_values?)
+                    },
                     LoxType::Function(func) => {
                         if let Statement::Function(_, identifiers, body) = func {
+                            if arguments.len() != identifiers.len() {
+                                bail!(
+                                    "Expected {} arguments but got {}.",
+                                    identifiers.len(),
+                                    arguments.len()
+                                )
+                            }
                             for (arg, id) in arguments.iter().zip(identifiers.iter()) {
                                 let arg_value = self.evaluate_expression(arg)?;
                                 self.environment.create(id.0.to_string(), Some(arg_value))

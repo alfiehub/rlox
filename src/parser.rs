@@ -141,6 +141,9 @@ impl Parser {
             self.expression()?
         ];
         while let TokenType::Comma = self.peek().token_type {
+            if expressions.len() >= 255 {
+                bail!("Cant have more than 255 argumets.")
+            }
             self.advance();
             expressions.push(self.expression()?);
         }
