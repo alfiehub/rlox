@@ -136,10 +136,12 @@ impl Scanner {
                 _   => bail!("Unexpected charecter: {}", char),
             }
         }
+        tokens.push(Token::new_empty(TokenType::Eof, line));
         Ok(tokens)
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -147,7 +149,7 @@ mod tests {
     fn test_scan_simple() {
         let source = "( ) { } , . - + ; * ! != = == < <= > >= / //";
         let tokens = Scanner::scan(source).unwrap();
-        assert_eq!(tokens.len(), 19);
+        assert_eq!(tokens.len(), 20);
     }
 
     #[test]
@@ -168,20 +170,20 @@ mod tests {
     fn test_block_comment() {
         let source = "/* hello world */";
         let tokens = Scanner::scan(source).unwrap();
-        assert_eq!(tokens.len(), 0);
+        assert_eq!(tokens.len(), 1);
     }
 
     #[test]
     fn test_nested_block_comment() {
         let source = "/* hello /* world */ */";
         let tokens = Scanner::scan(source).unwrap();
-        assert_eq!(tokens.len(), 0);
+        assert_eq!(tokens.len(), 1);
     }
 
     #[test]
     fn test_deeply_nested_block_comment() {
         let source = "/* hello /* world /* /* /* lmao */ */ //// **** \n\n\n\n /* */ */ */ */";
         let tokens = Scanner::scan(source).unwrap();
-        assert_eq!(tokens.len(), 0);
+        assert_eq!(tokens.len(), 1);
     }
 }

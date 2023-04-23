@@ -1,60 +1,15 @@
-use std::{collections::HashMap, fmt::Display, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{bail, Result};
 
 use crate::{
     ast::{Declaration, Expression, Statement},
+    lox_type::LoxType,
     token::TokenType,
 };
-
-#[derive(Debug, Clone)]
-struct NativeFunction {
-    pub name: String,
-    pub arity: usize,
-    pub func: fn(Vec<LoxType>) -> LoxType,
-}
-
-impl NativeFunction {
-    fn new(name: String, arity: usize, func: fn(Vec<LoxType>) -> LoxType) -> Self { Self { name, arity, func } }
-}
-
-impl From<NativeFunction> for LoxType {
-    fn from(value: NativeFunction) -> Self {
-        Self::NativeFunction(value)
-    }
-}
-
-#[derive(Debug, Clone)]
-enum LoxType {
-    Number(f64),
-    String(String),
-    Boolean(bool),
-    Nil,
-    Function(Statement),
-    NativeFunction(NativeFunction),
-}
-
-impl LoxType {
-    fn is_truthy(&self) -> bool {
-        match self {
-            LoxType::Nil => false,
-            LoxType::Boolean(b) => *b,
-            _ => true,
-        }
-    }
-}
-
-impl Display for LoxType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LoxType::Number(n) => write!(f, "{}", n),
-            LoxType::String(s) => write!(f, "{}", s),
-            LoxType::Boolean(b) => write!(f, "{}", b),
-            LoxType::Nil => write!(f, "nil"),
-            _ => todo!("Not implemented"),
-        }
-    }
-}
 
 #[derive(Debug)]
 struct Environment {
@@ -113,18 +68,20 @@ impl Interpreter {
         let mut environment = Environment::new();
         environment.create(
             "clock".to_string(),
-            Some(NativeFunction::new(
-                "clock".to_string(),
-                0,
-                |_| {
-                    LoxType::Number(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64)
+            Some(LoxType::NativeFunction {
+                name: "clock".to_string(),
+                arity: 0,
+                func: |_| {
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs_f64()
+                        .into()
                 },
-            ).into()),
+            }),
         );
         environment.nest();
-        Self {
-            environment,
-        }
+        Self { environment }
     }
 
     pub fn interpret(&mut self, declarations: &[Declaration]) -> Result<()> {
@@ -189,12 +146,11 @@ impl Interpreter {
 
     fn evaluate_expression(&mut self, expr: &Expression) -> Result<LoxType> {
         Ok(match expr {
-            // TODO: avoid cloning here?
-            Expression::Literal(literal) => match literal.0.clone() {
-                TokenType::Number(n) => LoxType::Number(n),
-                TokenType::String(s) => LoxType::String(s),
-                TokenType::True => LoxType::Boolean(true),
-                TokenType::False => LoxType::Boolean(false),
+            Expression::Literal(literal) => match &literal.0 {
+                TokenType::Number(n) => (*n).into(),
+                TokenType::String(s) => LoxType::String(s.to_string()),
+                TokenType::True => true.into(),
+                TokenType::False => false.into(),
                 TokenType::Nil => LoxType::Nil,
                 TokenType::Identifier(identifier) => match self.environment.get(&identifier)? {
                     Some(value) => value,
@@ -218,37 +174,17 @@ impl Interpreter {
                 let left = self.evaluate_expression(left)?;
                 let right = self.evaluate_expression(right)?;
 
-                match (left, right) {
-                    (LoxType::Number(left), LoxType::Number(right)) => match operator.0 {
-                        TokenType::Minus => LoxType::Number(left - right),
-                        TokenType::Slash => LoxType::Number(left / right),
-                        TokenType::Star => LoxType::Number(left * right),
-                        TokenType::Plus => LoxType::Number(left + right),
-                        TokenType::Greater => LoxType::Boolean(left > right),
-                        TokenType::GreaterEqual => LoxType::Boolean(left >= right),
-                        TokenType::Less => LoxType::Boolean(left < right),
-                        TokenType::LessEqual => LoxType::Boolean(left <= right),
-                        TokenType::BangEqual => LoxType::Boolean(left != right),
-                        TokenType::EqualEqual => LoxType::Boolean(left == right),
-                        _ => bail!("Invalid binary operator number."),
-                    },
-                    (LoxType::String(left), LoxType::String(right)) => match operator.0 {
-                        TokenType::Plus => LoxType::String(format!("{}{}", left, right)),
-                        TokenType::EqualEqual => LoxType::Boolean(left == right),
-                        TokenType::BangEqual => LoxType::Boolean(left != right),
-                        _ => bail!("Invalid binary operator for String."),
-                    },
-                    (LoxType::Boolean(left), LoxType::Boolean(right)) => match operator.0 {
-                        TokenType::EqualEqual => LoxType::Boolean(left == right),
-                        TokenType::BangEqual => LoxType::Boolean(left != right),
-                        _ => bail!("Invalid binary operator for Boolean."),
-                    },
-                    (LoxType::Nil, LoxType::Nil) => match operator.0 {
-                        TokenType::EqualEqual => LoxType::Boolean(true),
-                        TokenType::BangEqual => LoxType::Boolean(false),
-                        _ => bail!("Invalid binary operator for Nil."),
-                    },
-                    // TODO: allow number == string
+                match operator.0 {
+                    TokenType::Minus => (left - right)?,
+                    TokenType::Slash => (left / right)?,
+                    TokenType::Star => (left * right)?,
+                    TokenType::Plus => (left + right)?,
+                    TokenType::Greater => left.gt(&right)?.into(),
+                    TokenType::GreaterEqual => left.gte(&right)?.into(),
+                    TokenType::Less => left.lt(&right)?.into(),
+                    TokenType::LessEqual => left.lte(&right)?.into(),
+                    TokenType::BangEqual => left.neq(&right)?.into(),
+                    TokenType::EqualEqual => left.eq(&right)?.into(),
                     _ => bail!("Invalid binary operator."),
                 }
             }
@@ -285,18 +221,21 @@ impl Interpreter {
                 self.environment.nest();
                 let function = self.evaluate_expression(expr)?;
                 let return_value = match function {
-                    LoxType::NativeFunction(native_func) => {
-                        if native_func.arity != arguments.len() {
+                    LoxType::NativeFunction { name, arity, func } => {
+                        if arity != arguments.len() {
                             bail!(
                                 "Expected {} arguments for {} but got {}.",
-                                native_func.arity,
-                                native_func.name,
+                                arity,
+                                name,
                                 arguments.len()
-                                )
+                            )
                         }
-                        let argument_values: Result<Vec<LoxType>> = arguments.iter().map(|a| self.evaluate_expression(a)).collect();
-                        (native_func.func)(argument_values?)
-                    },
+                        let argument_values: Result<Vec<LoxType>> = arguments
+                            .iter()
+                            .map(|a| self.evaluate_expression(a))
+                            .collect();
+                        func(argument_values?)
+                    }
                     LoxType::Function(func) => {
                         if let Statement::Function(_, identifiers, body) = func {
                             if arguments.len() != identifiers.len() {
@@ -320,17 +259,13 @@ impl Interpreter {
                 self.environment.unnest();
                 return_value
             }
-            _ => bail!("Not implemented"),
         })
     }
 }
 
+#[cfg(test)]
 mod tests {
-
-    use crate::parser::Parser;
-    use crate::scanner::Scanner;
-
-    use super::*;
+    use crate::{interpreter::Interpreter, lox_type::LoxType, parser::Parser, scanner::Scanner};
 
     #[test]
     fn test_evaluate_expressions() {
@@ -346,6 +281,8 @@ mod tests {
             "3 <= 3",
             "\"hello\" == \"hello\"",
             "\"hello\" == \"world\"",
+            "nil == nil",
+            "\"hello\" + \" world\"",
         ];
         let results = vec![
             LoxType::Number(8.0),
@@ -359,17 +296,21 @@ mod tests {
             LoxType::Boolean(true),
             LoxType::Boolean(true),
             LoxType::Boolean(false),
+            LoxType::Boolean(true),
+            LoxType::String("hello world".to_string()),
         ];
         for (expression, expected_result) in expressions.iter().zip(results.iter()) {
             let tokens = Scanner::scan(expression).unwrap();
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
             let result = Interpreter::new().evaluate_expression(&expr).unwrap();
-            // assert_eq!(
-            //     result, *expected_result,
-            //     "\"{}\" resulted in {}",
-            //     expression, result
-            // );
+            assert_eq!(
+                result.eq(expected_result).unwrap(),
+                true,
+                "\"{}\" resulted in {}",
+                expression,
+                result
+            );
         }
     }
 
@@ -393,13 +334,13 @@ mod tests {
             let mut parser = Parser::new(tokens);
             let expr = parser.statement().unwrap();
             let result = Interpreter::new().evaluate_statement(&expr).unwrap();
-            // assert_eq!(
-            //     result,
-            //     LoxType::Nil,
-            //     "\"{}\" resulted in {}",
-            //     expression,
-            //     result
-            // );
+            assert_eq!(
+                result.eq(&LoxType::Nil).unwrap(),
+                true,
+                "\"{}\" resulted in {}",
+                expression,
+                result
+            );
         }
     }
 }

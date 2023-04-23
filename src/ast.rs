@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::token::{Token, TokenType};
+use crate::token::TokenType;
 
 #[derive(Debug)]
 pub struct Program(pub Statement);

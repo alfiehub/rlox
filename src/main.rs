@@ -4,10 +4,10 @@ use interpreter::Interpreter;
 
 mod ast;
 mod scanner;
-mod error;
 mod token;
 mod parser;
 mod interpreter;
+mod lox_type;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
