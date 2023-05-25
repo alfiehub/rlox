@@ -49,12 +49,13 @@ impl Parser {
 
     fn logic_or(&mut self) -> Result<Expression> {
         let expr = self.logic_and()?;
-        if let TokenType::Or = self.peek().token_type {
+        let token = self.peek();
+        if let TokenType::Or = token.token_type {
             self.advance();
             let right = self.logic_and()?;
             Ok(Expression::Logical(
                 Box::new(expr),
-                Operator(TokenType::Or),
+                Operator(token),
                 Box::new(right),
             ))
         } else {
@@ -64,12 +65,13 @@ impl Parser {
 
     fn logic_and(&mut self) -> Result<Expression> {
         let expr = self.equality()?;
-        if let TokenType::And = self.peek().token_type {
+        let token = self.peek();
+        if let TokenType::And = token.token_type {
             self.advance();
             let right = self.equality()?;
             Ok(Expression::Logical(
                 Box::new(expr),
-                Operator(TokenType::And),
+                Operator(token),
                 Box::new(right),
             ))
         } else {
@@ -79,18 +81,21 @@ impl Parser {
 
     pub fn assignment(&mut self) -> Result<Expression> {
         let expr = self.logic_or()?;
-        match self.peek().token_type {
+        let token = self.peek();
+        match token.token_type {
             TokenType::Equal => {
                 self.advance();
                 let value = self.assignment()?;
-                if let Expression::Literal(Literal(TokenType::Identifier(identifier))) = expr {
-                    return Ok(Expression::Assignment(
-                        Identifier(TokenType::Identifier(identifier)),
-                        Box::new(value),
-                    ));
-                } else {
-                    bail!("Invalid assignment target.");
+                if let Expression::Literal(Literal(token)) = expr {
+                    if let Token {
+                        token_type: TokenType::Identifier(_),
+                        ..
+                    } = token
+                    {
+                        return Ok(Expression::Assignment(Identifier(token), Box::new(value)));
+                    }
                 }
+                bail!("Invalid assignment target.");
             }
             _ => Ok(expr),
         }
@@ -105,7 +110,7 @@ impl Parser {
             | TokenType::Number(_)
             | TokenType::String(_) => {
                 self.advance();
-                Expression::Literal(Literal(token.token_type.clone()))
+                Expression::Literal(Literal(token))
             }
             TokenType::LeftParen => {
                 self.advance();
@@ -115,31 +120,33 @@ impl Parser {
             }
             TokenType::Identifier(_) => {
                 self.advance();
-                Expression::Literal(Literal(token.token_type.clone()))
+                Expression::Literal(Literal(token))
             }
             _ => {
-                bail!("Expected expression @ line: {}, found {:?}", token.line, token)
-            },
+                bail!(
+                    "Expected expression @ line: {}, found {:?}",
+                    token.line,
+                    token
+                )
+            }
         };
         Ok(expr)
     }
 
     fn unary(&mut self) -> Result<Expression> {
-        Ok(match self.peek().token_type {
+        let token = self.peek();
+        Ok(match token.token_type {
             TokenType::Bang | TokenType::Minus => {
                 self.advance();
-                let operator = self.previous();
                 let right = self.unary()?;
-                Expression::Unary(UnaryOperator(operator.token_type), Box::new(right))
+                Expression::Unary(UnaryOperator(token), Box::new(right))
             }
             _ => self.call()?,
         })
     }
 
     fn arguments(&mut self) -> Result<Vec<Expression>> {
-        let mut expressions = vec![
-            self.expression()?
-        ];
+        let mut expressions = vec![self.expression()?];
         while let TokenType::Comma = self.peek().token_type {
             if expressions.len() >= 255 {
                 bail!("Cant have more than 255 argumets.")
@@ -148,7 +155,6 @@ impl Parser {
             expressions.push(self.expression()?);
         }
         Ok(expressions)
-
     }
 
     fn call(&mut self) -> Result<Expression> {
@@ -166,7 +172,6 @@ impl Parser {
         Ok(expr)
     }
 
-
     fn factor(&mut self) -> Result<Expression> {
         let mut expr = self.unary()?;
         while let TokenType::Slash | TokenType::Star = self.peek().token_type {
@@ -175,7 +180,7 @@ impl Parser {
             let right = self.unary()?;
             expr = Expression::Binary(
                 Box::new(expr),
-                Operator(operator.token_type),
+                Operator(operator),
                 Box::new(right),
             );
         }
@@ -190,7 +195,7 @@ impl Parser {
             let right = self.factor()?;
             expr = Expression::Binary(
                 Box::new(expr),
-                Operator(operator.token_type),
+                Operator(operator),
                 Box::new(right),
             );
         }
@@ -209,7 +214,7 @@ impl Parser {
             let right = self.term()?;
             expr = Expression::Binary(
                 Box::new(expr),
-                Operator(operator.token_type),
+                Operator(operator),
                 Box::new(right),
             );
         }
@@ -226,7 +231,7 @@ impl Parser {
             let right = self.comparison()?;
             expr = Expression::Binary(
                 Box::new(expr),
-                Operator(operator.token_type),
+                Operator(operator),
                 Box::new(right),
             );
         }
@@ -320,9 +325,7 @@ impl Parser {
 
     fn identifier(&mut self) -> Result<Identifier> {
         let identifier = match self.peek().token_type {
-            TokenType::Identifier(_) => {
-                Identifier(self.peek().token_type.clone())
-            },
+            TokenType::Identifier(_) => Identifier(self.peek()),
             _ => bail!("Expected identfier."),
         };
         self.advance();
@@ -345,7 +348,7 @@ impl Parser {
         let declaration = if self.peek().token_type == TokenType::Var {
             self.advance();
             let identifier = match self.peek().token_type {
-                TokenType::Identifier(_) => self.peek().token_type.clone(),
+                TokenType::Identifier(_) => self.peek(),
                 _ => bail!("Expected identfier after var."),
             };
             self.advance();
@@ -365,17 +368,27 @@ impl Parser {
         } else if self.peek().token_type == TokenType::Fun {
             self.advance();
             let identifier = match self.peek().token_type {
-                TokenType::Identifier(_) => self.peek().token_type.clone(),
+                TokenType::Identifier(_) => self.peek(),
                 _ => bail!("Expected identfier after var."),
             };
             self.advance();
 
-            self.consume(TokenType::LeftParen, "Expected '(' after function identifier")?;
+            self.consume(
+                TokenType::LeftParen,
+                "Expected '(' after function identifier",
+            )?;
             let parameters = self.parameters()?;
-            self.consume(TokenType::RightParen, "Expected ')' after function parameters")?;
+            self.consume(
+                TokenType::RightParen,
+                "Expected ')' after function parameters",
+            )?;
 
             let body = self.statement()?;
-            Declaration::Statement(Statement::Function(Identifier(identifier), parameters, body.into()))
+            Declaration::Statement(Statement::Function(
+                Identifier(identifier),
+                parameters,
+                body.into(),
+            ))
         } else {
             Declaration::Statement(self.statement()?)
         };

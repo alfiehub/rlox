@@ -94,7 +94,7 @@ impl Interpreter {
     fn evaluate_declaration(&mut self, decl: &Declaration) -> Result<LoxType> {
         match decl {
             Declaration::Variable(identifier, expr_option) => {
-                if let TokenType::Identifier(identifier) = &identifier.0 {
+                if let TokenType::Identifier(identifier) = &identifier.0.token_type {
                     let value = expr_option
                         .as_ref()
                         .map(|expr| self.evaluate_expression(expr))
@@ -135,7 +135,7 @@ impl Interpreter {
                 }
             }
             Statement::Function(identifier, _, _) => {
-                if let TokenType::Identifier(identifier) = &identifier.0 {
+                if let TokenType::Identifier(identifier) = &identifier.0.token_type {
                     self.environment
                         .create(identifier.clone(), Some(LoxType::Function(stmt.clone())));
                 }
@@ -146,7 +146,7 @@ impl Interpreter {
 
     fn evaluate_expression(&mut self, expr: &Expression) -> Result<LoxType> {
         Ok(match expr {
-            Expression::Literal(literal) => match &literal.0 {
+            Expression::Literal(literal) => match &literal.0.token_type {
                 TokenType::Number(n) => (*n).into(),
                 TokenType::String(s) => LoxType::String(s.to_string()),
                 TokenType::True => true.into(),
@@ -161,7 +161,7 @@ impl Interpreter {
             Expression::Grouping(expr) => self.evaluate_expression(expr)?,
             Expression::Unary(operator, expr) => {
                 let right = self.evaluate_expression(expr)?;
-                match operator.0 {
+                match operator.0.token_type {
                     TokenType::Bang => LoxType::Boolean(!right.is_truthy()),
                     TokenType::Minus => match right {
                         LoxType::Number(n) => LoxType::Number(-n),
@@ -174,7 +174,7 @@ impl Interpreter {
                 let left = self.evaluate_expression(left)?;
                 let right = self.evaluate_expression(right)?;
 
-                match operator.0 {
+                match operator.0.token_type {
                     TokenType::Minus => (left - right)?,
                     TokenType::Slash => (left / right)?,
                     TokenType::Star => (left * right)?,
@@ -190,7 +190,7 @@ impl Interpreter {
             }
             Expression::Assignment(identifier, expr) => {
                 let value = self.evaluate_expression(expr)?;
-                if let TokenType::Identifier(identifier) = &identifier.0 {
+                if let TokenType::Identifier(identifier) = &identifier.0.token_type {
                     self.environment.assign(identifier.clone(), Some(value))?;
                 } else {
                     bail!("Expected identifier, got {:?}", identifier);
@@ -199,7 +199,7 @@ impl Interpreter {
             }
             Expression::Logical(left, operator, right) => {
                 let left = self.evaluate_expression(left)?;
-                match operator.0 {
+                match operator.0.token_type {
                     TokenType::Or => {
                         if left.is_truthy() {
                             left
@@ -265,7 +265,10 @@ impl Interpreter {
 
 #[cfg(test)]
 mod tests {
-    use crate::{interpreter::Interpreter, lox_type::LoxType, parser::Parser, scanner::Scanner};
+    use crate::parser::Parser;
+    use crate::scanner::Scanner;
+
+    use super::*;
 
     #[test]
     fn test_evaluate_expressions() {
