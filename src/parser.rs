@@ -178,11 +178,7 @@ impl Parser {
             self.advance();
             let operator = self.previous();
             let right = self.unary()?;
-            expr = Expression::Binary(
-                Box::new(expr),
-                Operator(operator),
-                Box::new(right),
-            );
+            expr = Expression::Binary(Box::new(expr), Operator(operator), Box::new(right));
         }
         Ok(expr)
     }
@@ -193,11 +189,7 @@ impl Parser {
             self.advance();
             let operator = self.previous();
             let right = self.factor()?;
-            expr = Expression::Binary(
-                Box::new(expr),
-                Operator(operator),
-                Box::new(right),
-            );
+            expr = Expression::Binary(Box::new(expr), Operator(operator), Box::new(right));
         }
         Ok(expr)
     }
@@ -212,28 +204,20 @@ impl Parser {
             self.advance();
             let operator = self.previous();
             let right = self.term()?;
-            expr = Expression::Binary(
-                Box::new(expr),
-                Operator(operator),
-                Box::new(right),
-            );
+            expr = Expression::Binary(Box::new(expr), Operator(operator), Box::new(right));
         }
         Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expression> {
         let mut expr = self.comparison()?;
-        while let TokenType::BangEqual | TokenType::EqualEqual | TokenType::Comma =
+        while let TokenType::BangEqual | TokenType::EqualEqual =
             self.peek().token_type
         {
             self.advance();
             let operator = self.previous();
             let right = self.comparison()?;
-            expr = Expression::Binary(
-                Box::new(expr),
-                Operator(operator),
-                Box::new(right),
-            );
+            expr = Expression::Binary(Box::new(expr), Operator(operator), Box::new(right));
         }
         Ok(expr)
     }
@@ -471,13 +455,11 @@ mod tests {
         let codes = vec![
             "1 + 2 * 3",
             "1 + 2 * 3 + 4",
-            "1 + 2, 3 + 4",
             "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8",
         ];
         let results = vec![
             "(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
-            "(, (+ 1 2) (+ 3 4))",
             "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)",
         ];
         for (code, result) in codes.iter().zip(results.iter()) {
@@ -492,14 +474,14 @@ mod tests {
     fn test_statements() {
         let codes = vec![
             "1 + 2 * 3;",
-            "1 + 2 * 3 + 4;",
-            "print 1 + 2, 3 + 4;",
+            "1 + 2* 3 + 4;",
+            "print 1 + 2 + 3 + 4;",
             "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;",
         ];
         let results = vec![
             "(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
-            "(print (, (+ 1 2) (+ 3 4)))",
+            "(print (+ (+ (+ 1 2) 3) 4))",
             "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))",
         ];
         for (code, result) in codes.iter().zip(results.iter()) {
@@ -513,6 +495,22 @@ mod tests {
                 code,
                 statement.to_string()
             );
+        }
+    }
+
+    #[test]
+    fn test_call() {
+        let program = "
+            someCall(1, 2, 3);
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        let parsed = parser.parse().expect("Should be able to parse");
+        let decl = parsed.first().expect("Should be on declaration");
+        if let Declaration::Statement(Statement::Expression(Expression::Call(_, args))) = decl {
+            assert_eq!(args.len(), 3, "Arguments of call should have length 3");
+        } else {
+            panic!()
         }
     }
 }

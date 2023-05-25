@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use crate::{
     ast::{Declaration, Expression, Statement},
     lox_type::LoxType,
-    token::TokenType,
+    token::{TokenType, Token},
 };
 
 #[derive(Debug)]
@@ -240,14 +240,19 @@ impl Interpreter {
                         if let Statement::Function(_, identifiers, body) = func {
                             if arguments.len() != identifiers.len() {
                                 bail!(
-                                    "Expected {} arguments but got {}.",
+                                    "Expected {} arguments but got {}. {}",
                                     identifiers.len(),
-                                    arguments.len()
+                                    arguments.len(),
+                                    expr
                                 )
                             }
                             for (arg, id) in arguments.iter().zip(identifiers.iter()) {
                                 let arg_value = self.evaluate_expression(arg)?;
-                                self.environment.create(id.0.to_string(), Some(arg_value))
+                                if let Token { token_type: TokenType::Identifier(identifier), .. } = &id.0 {
+                                    self.environment.create(identifier.to_string(), Some(arg_value));
+                                } else {
+                                    bail!("Identifier didnt contain correct TokenType.")
+                                }
                             }
                             self.evaluate_statement(&body)?
                         } else {
@@ -345,5 +350,20 @@ mod tests {
                 result
             );
         }
+    }
+
+    #[test]
+    fn test_function_multiple_arguments() {
+        let program = "
+            fun add(a, b, c) {
+              print a + b + c;
+            }
+
+            add(1, 2, 3);
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+        Interpreter::new().interpret(&program).unwrap()
     }
 }

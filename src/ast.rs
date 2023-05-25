@@ -122,18 +122,18 @@ impl Display for Expression {
             "{}",
             match self {
                 Expression::Unary(operator, expression) => {
-                    parenthesize(&operator.0.to_string(), &[expression])
+                    parenthesize(&operator.0.token_type.to_string(), &[expression])
                 }
                 Expression::Binary(left, operator, right) => {
-                    parenthesize(&operator.0.to_string(), &[left, right])
+                    parenthesize(&operator.0.token_type.to_string(), &[left, right])
                 }
                 Expression::Logical(left, operator, right) => {
-                    parenthesize(&operator.0.to_string(), &[left, right])
+                    parenthesize(&operator.0.token_type.to_string(), &[left, right])
                 }
                 Expression::Grouping(expression) => parenthesize("group", &[expression]),
-                Expression::Literal(literal) => literal.0.to_string(),
+                Expression::Literal(literal) => literal.0.token_type.to_string(),
                 Expression::Assignment(identifier, expression) =>
-                    parenthesize(&identifier.0.to_string(), &[expression]),
+                    parenthesize(&identifier.0.token_type.to_string(), &[expression]),
                 _ => todo!("Not implemented"),
             }
         )
