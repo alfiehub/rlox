@@ -224,6 +224,16 @@ impl Parser {
 
     pub fn statement(&mut self) -> Result<Statement> {
         let statement = match self.peek().token_type {
+            TokenType::Return => {
+                self.advance();
+                let return_expr = if let TokenType::Semicolon = self.peek().token_type {
+                    None
+                } else {
+                    Some(self.expression()?)
+                };
+                self.consume(TokenType::Semicolon, "Expected ';' after return.")?;
+                Statement::Return(return_expr)
+            }
             TokenType::Print => {
                 self.advance();
                 let expr = self.expression()?;

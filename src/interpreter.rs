@@ -8,12 +8,18 @@ use anyhow::{bail, Result};
 use crate::{
     ast::{Declaration, Expression, Statement},
     lox_type::LoxType,
-    token::{TokenType, Token},
+    token::{Token, TokenType},
 };
 
 #[derive(Debug)]
 struct Environment {
     values: Vec<HashMap<String, Option<LoxType>>>,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum InterpreterError {
+    #[error("Return is used for flow control")]
+    Return(LoxType),
 }
 
 impl Environment {
@@ -114,13 +120,28 @@ impl Interpreter {
             Statement::Expression(expr) => {
                 self.evaluate_expression(expr)?;
             }
-            Statement::Print(expr) => println!("{}", self.evaluate_expression(expr)?),
+            Statement::Print(expr) => {
+                println!("{}", self.evaluate_expression(expr)?);
+            }
             Statement::Block(declarations) => {
                 self.environment.nest();
-                for decl in declarations {
-                    self.evaluate_declaration(decl)?;
-                }
+                let mut i = 0;
+                let return_value = loop {
+                    let decl = &declarations[i];
+                    match self.evaluate_declaration(decl) {
+                        Err(e) => match e.downcast_ref::<InterpreterError>() {
+                            Some(InterpreterError::Return(value)) => break value.clone(),
+                            _ => bail!(e),
+                        },
+                        _ => {}
+                    }
+                    i += 1;
+                    if i == declarations.len() {
+                        break LoxType::Nil;
+                    }
+                };
                 self.environment.unnest();
+                return Ok(return_value);
             }
             Statement::If(condition, then_branch, else_branch) => {
                 if self.evaluate_expression(condition)?.is_truthy() {
@@ -140,7 +161,16 @@ impl Interpreter {
                         .create(identifier.clone(), Some(LoxType::Function(stmt.clone())));
                 }
             }
-        };
+            Statement::Return(expr) => {
+                if let Some(return_expr) = expr {
+                    bail!(InterpreterError::Return(
+                        self.evaluate_expression(return_expr)?
+                    ))
+                } else {
+                    bail!(InterpreterError::Return(LoxType::Nil))
+                }
+            }
+        }
         Ok(LoxType::Nil)
     }
 
@@ -248,8 +278,13 @@ impl Interpreter {
                             }
                             for (arg, id) in arguments.iter().zip(identifiers.iter()) {
                                 let arg_value = self.evaluate_expression(arg)?;
-                                if let Token { token_type: TokenType::Identifier(identifier), .. } = &id.0 {
-                                    self.environment.create(identifier.to_string(), Some(arg_value));
+                                if let Token {
+                                    token_type: TokenType::Identifier(identifier),
+                                    ..
+                                } = &id.0
+                                {
+                                    self.environment
+                                        .create(identifier.to_string(), Some(arg_value));
                                 } else {
                                     bail!("Identifier didnt contain correct TokenType.")
                                 }

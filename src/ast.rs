@@ -50,6 +50,7 @@ pub enum Statement {
     Block(Vec<Declaration>),
     While(Expression, Box<Statement>),
     Function(Identifier, Vec<Identifier>, Box<Statement>),
+    Return(Option<Expression>),
 }
 
 #[derive(Debug, Clone)]
