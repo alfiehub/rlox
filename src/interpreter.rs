@@ -1,78 +1,115 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
+    rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 use crate::{
     ast::{Declaration, Expression, Statement},
-    lox_type::LoxType,
+    lox_type::{LoxType, LoxTypeError},
     token::{Token, TokenType},
 };
 
 #[derive(Debug)]
-struct Environment {
-    values: Vec<HashMap<String, Option<LoxType>>>,
+pub struct Environment {
+    parent: Option<Rc<RefCell<Environment>>>,
+    values: HashMap<String, Option<LoxType>>,
 }
 
-#[derive(Debug, thiserror::Error)]
-enum InterpreterError {
-    #[error("Return is used for flow control")]
-    Return(LoxType),
+struct EnvironmentError(String);
+impl std::fmt::Display for EnvironmentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+macro_rules! environment_bail {
+    ($msg:expr) => {
+        return Err(EnvironmentError($msg.to_string()))
+    };
+}
+
+impl From<EnvironmentError> for InterpreterError {
+    fn from(value: EnvironmentError) -> Self {
+        Self::GenericError(value.0)
+    }
 }
 
 impl Environment {
-    fn new() -> Self {
-        Self {
-            values: vec![HashMap::new()],
+    fn new() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
+            parent: None,
+            values: HashMap::new(),
+        }))
+    }
+
+    fn get(&self, key: &str) -> Result<Option<LoxType>, EnvironmentError> {
+        match self.values.get(key) {
+            Some(value) => match value {
+                Some(value) => Ok(Some(value.clone())),
+                None => environment_bail!(format!("Uninitialized variable '{}'.", key)),
+            },
+            None => match &self.parent {
+                Some(parent) => parent.borrow().get(key),
+                None => environment_bail!(format!("Undefined variable '{}'.", key)),
+            },
         }
-    }
-
-    fn nest(&mut self) {
-        self.values.push(HashMap::new());
-    }
-
-    fn unnest(&mut self) {
-        self.values.pop();
-    }
-
-    fn get(&self, key: &str) -> Result<Option<LoxType>> {
-        // Loop backwards until value
-        for scope in self.values.iter().rev() {
-            if let Some(value) = scope.get(key) {
-                return match value {
-                    Some(value) => Ok(Some(value.clone())),
-                    None => bail!("Uninitialized variable '{}'.", key),
-                };
-            }
-        }
-        bail!("Undefined variable '{}'.", key);
     }
 
     fn create(&mut self, key: String, value: Option<LoxType>) {
-        self.values.last_mut().unwrap().insert(key, value);
+        self.values.insert(key, value);
     }
 
-    fn assign(&mut self, key: String, value: Option<LoxType>) -> Result<()> {
-        for scope in self.values.iter_mut().rev() {
-            if scope.contains_key(&key) {
-                scope.insert(key, value);
-                return Ok(());
+    fn assign(&mut self, key: String, value: Option<LoxType>) -> Result<(), EnvironmentError> {
+        if self.values.contains_key(&key) {
+            self.values.insert(key, value);
+            Ok(())
+        } else {
+            match &self.parent {
+                Some(parent) => parent.borrow_mut().assign(key, value),
+
+                None => environment_bail!("Undefined variable '{key}'."),
             }
         }
-        bail!("Undefined variable '{}'.", key);
     }
 }
 
 pub struct Interpreter {
-    environment: Environment,
+    environment: Rc<RefCell<Environment>>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum InterpreterError {
+    #[error("Return is used for flow control")]
+    Return(LoxType),
+    #[error("Something unexpected.")]
+    Unexpected(String),
+    #[error("Uninitialized variable")]
+    UninitializedVariable(String),
+    #[error("Generic error")]
+    GenericError(String),
+}
+
+macro_rules! generic_bail {
+    ($msg:expr) => {
+        return Err(InterpreterError::GenericError($msg))
+    };
+}
+
+impl From<LoxTypeError> for InterpreterError {
+    fn from(value: LoxTypeError) -> Self {
+        Self::GenericError(value.0)
+    }
+}
+
+type InterpreterResult<T> = Result<T, InterpreterError>;
 impl Interpreter {
     pub fn new() -> Self {
-        let mut environment = Environment::new();
-        environment.create(
+        let environment = Environment::new();
+        environment.borrow_mut().create(
             "clock".to_string(),
             Some(LoxType::NativeFunction {
                 name: "clock".to_string(),
@@ -86,18 +123,33 @@ impl Interpreter {
                 },
             }),
         );
-        environment.nest();
-        Self { environment }
+        let mut interpreter = Self { environment };
+        interpreter.nest_environment();
+        interpreter
     }
 
-    pub fn interpret(&mut self, declarations: &[Declaration]) -> Result<()> {
+    fn nest_environment(&mut self) {
+        let child_environment = Environment::new();
+        child_environment.borrow_mut().parent = Some(self.environment.clone());
+        self.environment = child_environment
+    }
+
+    fn unnest_environment(&mut self) {
+        if let Some(parent_environment) = &self.environment.clone().borrow().parent {
+            self.environment = parent_environment.clone();
+        } else {
+            panic!("No parent environment to unnest to.")
+        }
+    }
+
+    pub fn interpret(&mut self, declarations: &[Declaration]) -> InterpreterResult<()> {
         for decl in declarations {
             self.evaluate_declaration(decl)?;
         }
         Ok(())
     }
 
-    fn evaluate_declaration(&mut self, decl: &Declaration) -> Result<LoxType> {
+    fn evaluate_declaration(&mut self, decl: &Declaration) -> InterpreterResult<LoxType> {
         match decl {
             Declaration::Variable(identifier, expr_option) => {
                 if let TokenType::Identifier(identifier) = &identifier.0.token_type {
@@ -105,9 +157,14 @@ impl Interpreter {
                         .as_ref()
                         .map(|expr| self.evaluate_expression(expr))
                         .transpose()?;
-                    self.environment.create(identifier.clone(), value);
+                    self.environment
+                        .borrow_mut()
+                        .create(identifier.clone(), value);
                 } else {
-                    bail!("Expected identifier, got {:?}", identifier);
+                    return Err(InterpreterError::Unexpected(format!(
+                        "Expected identifier, got {:?}",
+                        identifier
+                    )));
                 }
                 Ok(LoxType::Nil)
             }
@@ -115,7 +172,7 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_statement(&mut self, stmt: &Statement) -> Result<LoxType> {
+    fn evaluate_statement(&mut self, stmt: &Statement) -> InterpreterResult<LoxType> {
         match stmt {
             Statement::Expression(expr) => {
                 self.evaluate_expression(expr)?;
@@ -124,14 +181,14 @@ impl Interpreter {
                 println!("{}", self.evaluate_expression(expr)?);
             }
             Statement::Block(declarations) => {
-                self.environment.nest();
+                self.nest_environment();
                 let mut i = 0;
                 let return_value = loop {
                     let decl = &declarations[i];
                     match self.evaluate_declaration(decl) {
-                        Err(e) => match e.downcast_ref::<InterpreterError>() {
-                            Some(InterpreterError::Return(value)) => break value.clone(),
-                            _ => bail!(e),
+                        Err(e) => match e {
+                            InterpreterError::Return(value) => break value.clone(),
+                            _ => return Err(e),
                         },
                         _ => {}
                     }
@@ -140,7 +197,7 @@ impl Interpreter {
                         break LoxType::Nil;
                     }
                 };
-                self.environment.unnest();
+                self.unnest_environment();
                 return Ok(return_value);
             }
             Statement::If(condition, then_branch, else_branch) => {
@@ -157,24 +214,26 @@ impl Interpreter {
             }
             Statement::Function(identifier, _, _) => {
                 if let TokenType::Identifier(identifier) = &identifier.0.token_type {
-                    self.environment
-                        .create(identifier.clone(), Some(LoxType::Function(stmt.clone())));
+                    self.environment.borrow_mut().create(
+                        identifier.clone(),
+                        Some(LoxType::Function(stmt.clone(), self.environment.clone())),
+                    );
                 }
             }
             Statement::Return(expr) => {
                 if let Some(return_expr) = expr {
-                    bail!(InterpreterError::Return(
-                        self.evaluate_expression(return_expr)?
-                    ))
+                    return Err(InterpreterError::Return(
+                        self.evaluate_expression(return_expr)?,
+                    ));
                 } else {
-                    bail!(InterpreterError::Return(LoxType::Nil))
+                    return Err(InterpreterError::Return(LoxType::Nil));
                 }
             }
         }
         Ok(LoxType::Nil)
     }
 
-    fn evaluate_expression(&mut self, expr: &Expression) -> Result<LoxType> {
+    fn evaluate_expression(&mut self, expr: &Expression) -> InterpreterResult<LoxType> {
         Ok(match expr {
             Expression::Literal(literal) => match &literal.0.token_type {
                 TokenType::Number(n) => (*n).into(),
@@ -182,11 +241,23 @@ impl Interpreter {
                 TokenType::True => true.into(),
                 TokenType::False => false.into(),
                 TokenType::Nil => LoxType::Nil,
-                TokenType::Identifier(identifier) => match self.environment.get(&identifier)? {
-                    Some(value) => value,
-                    None => bail!("Uninitialized variable '{}'", identifier),
-                },
-                _ => bail!("Invalid literal"),
+                TokenType::Identifier(identifier) => {
+                    match self
+                        .environment
+                        .borrow()
+                        .get(&identifier)
+                        .map_err(|e| InterpreterError::GenericError(e.to_string()))?
+                    {
+                        Some(value) => value,
+                        None => {
+                            return Err(InterpreterError::UninitializedVariable(format!(
+                                "Uninitialized variable '{}'",
+                                identifier
+                            )))
+                        }
+                    }
+                }
+                _ => return Err(InterpreterError::GenericError(format!("Invalid literal"))),
             },
             Expression::Grouping(expr) => self.evaluate_expression(expr)?,
             Expression::Unary(operator, expr) => {
@@ -195,9 +266,9 @@ impl Interpreter {
                     TokenType::Bang => LoxType::Boolean(!right.is_truthy()),
                     TokenType::Minus => match right {
                         LoxType::Number(n) => LoxType::Number(-n),
-                        _ => bail!("Operand must be a number."),
+                        _ => generic_bail!("Operand must be a number.".to_string()),
                     },
-                    _ => bail!("Invalid unary operator"),
+                    _ => generic_bail!("Invalid unary operator".to_string()),
                 }
             }
             Expression::Binary(left, operator, right) => {
@@ -215,15 +286,17 @@ impl Interpreter {
                     TokenType::LessEqual => left.lte(&right)?.into(),
                     TokenType::BangEqual => left.neq(&right)?.into(),
                     TokenType::EqualEqual => left.eq(&right)?.into(),
-                    _ => bail!("Invalid binary operator."),
+                    _ => generic_bail!("Invalid binary operator.".to_string()),
                 }
             }
             Expression::Assignment(identifier, expr) => {
                 let value = self.evaluate_expression(expr)?;
                 if let TokenType::Identifier(identifier) = &identifier.0.token_type {
-                    self.environment.assign(identifier.clone(), Some(value))?;
+                    self.environment
+                        .borrow_mut()
+                        .assign(identifier.clone(), Some(value))?;
                 } else {
-                    bail!("Expected identifier, got {:?}", identifier);
+                    generic_bail!(format!("Expected identifier, got {:?}", identifier));
                 }
                 LoxType::Nil
             }
@@ -244,37 +317,39 @@ impl Interpreter {
                             self.evaluate_expression(right)?
                         }
                     }
-                    _ => bail!("Invalid logical operator"),
+                    _ => generic_bail!("Invalid logical operator".to_string()),
                 }
             }
             Expression::Call(expr, arguments) => {
-                self.environment.nest();
+                self.nest_environment();
                 let function = self.evaluate_expression(expr)?;
                 let return_value = match function {
                     LoxType::NativeFunction { name, arity, func } => {
                         if arity != arguments.len() {
-                            bail!(
+                            generic_bail!(format!(
                                 "Expected {} arguments for {} but got {}.",
                                 arity,
                                 name,
                                 arguments.len()
-                            )
+                            ))
                         }
-                        let argument_values: Result<Vec<LoxType>> = arguments
+                        let argument_values: InterpreterResult<Vec<LoxType>> = arguments
                             .iter()
                             .map(|a| self.evaluate_expression(a))
                             .collect();
                         func(argument_values?)
                     }
-                    LoxType::Function(func) => {
-                        if let Statement::Function(_, identifiers, body) = func {
+                    LoxType::Function(func, environment) => {
+                        let old_environment = self.environment.clone();
+                        self.environment = environment;
+                        let return_value = if let Statement::Function(_, identifiers, body) = func {
                             if arguments.len() != identifiers.len() {
-                                bail!(
+                                generic_bail!(format!(
                                     "Expected {} arguments but got {}. {}",
                                     identifiers.len(),
                                     arguments.len(),
                                     expr
-                                )
+                                ))
                             }
                             for (arg, id) in arguments.iter().zip(identifiers.iter()) {
                                 let arg_value = self.evaluate_expression(arg)?;
@@ -284,19 +359,27 @@ impl Interpreter {
                                 } = &id.0
                                 {
                                     self.environment
+                                        .borrow_mut()
                                         .create(identifier.to_string(), Some(arg_value));
                                 } else {
-                                    bail!("Identifier didnt contain correct TokenType.")
+                                    generic_bail!(
+                                        "Identifier didnt contain correct TokenType.".to_string()
+                                    )
                                 }
                             }
                             self.evaluate_statement(&body)?
                         } else {
-                            bail!("Expected statement in LoxType::Function to be of type Funtion")
-                        }
+                            generic_bail!(
+                                "Expected statement in LoxType::Function to be of type Funtion"
+                                    .to_string()
+                            )
+                        };
+                        self.environment = old_environment;
+                        return_value
                     }
-                    _ => bail!("Expected call on function."),
+                    _ => generic_bail!("Expected call on function.".to_string()),
                 };
-                self.environment.unnest();
+                self.unnest_environment();
                 return_value
             }
         })
@@ -400,5 +483,32 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
         Interpreter::new().interpret(&program).unwrap()
+    }
+
+    #[test]
+    fn test_nested_function_environment() {
+        let program = "
+            fun makeCounter() {
+              var i = 0;
+              fun count() {
+                i = i + 1;
+                print i;
+              }
+
+              return count;
+            }
+            var i = 100;
+            var counter = makeCounter();
+            counter();
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret(&program).unwrap();
+        match interpreter.environment.clone().borrow().get("i") {
+            Ok(Some(LoxType::Number(n))) => assert_eq!(n, 100.0),
+            _ => panic!("No i in environment"),
+        }
     }
 }

@@ -1,8 +1,6 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-use anyhow::{bail, Result};
-
-use crate::ast::Statement;
+use crate::{ast::Statement, interpreter::Environment};
 
 #[derive(Debug, Clone)]
 pub enum LoxType {
@@ -10,13 +8,24 @@ pub enum LoxType {
     String(String),
     Boolean(bool),
     Nil,
-    Function(Statement),
+    Function(Statement, Rc<RefCell<Environment>>),
     NativeFunction {
         name: String,
         arity: usize,
         func: fn(Vec<LoxType>) -> LoxType,
     },
 }
+
+#[derive(Debug)]
+pub struct LoxTypeError(pub String);
+
+macro_rules! lox_type_bail {
+    ($msg:expr) => {
+        return Err(LoxTypeError($msg.to_string()))
+    };
+}
+
+type LoxTypeResult<T> = Result<T, LoxTypeError>;
 
 impl LoxType {
     pub fn is_truthy(&self) -> bool {
@@ -27,92 +36,92 @@ impl LoxType {
         }
     }
 
-    pub fn eq(&self, other: &Self) -> Result<bool> {
+    pub fn eq(&self, other: &Self) -> LoxTypeResult<bool> {
         Ok(match (self, other) {
             (Self::Number(l0), Self::Number(r0)) => l0 == r0,
             (Self::String(l0), Self::String(r0)) => l0 == r0,
             (Self::Boolean(l0), Self::Boolean(r0)) => l0 == r0,
             (Self::Nil, Self::Nil) => true,
-            _ => bail!("== not defined for {} {}", self, other),
+            _ => lox_type_bail!(format!("== not defined for {} {}", self, other)),
         }
         .into())
     }
 
-    pub fn neq(&self, other: &Self) -> Result<bool> {
+    pub fn neq(&self, other: &Self) -> LoxTypeResult<bool> {
         let result = self.eq(other)?;
         Ok(!result)
     }
 
-    pub fn gt(&self, other: &Self) -> Result<bool> {
+    pub fn gt(&self, other: &Self) -> LoxTypeResult<bool> {
         match (self, other) {
             (LoxType::Number(l), LoxType::Number(r)) => Ok(l > r),
-            _ => bail!("> only defined for Number."),
+            _ => lox_type_bail!("> only defined for Number."),
         }
     }
 
-    pub fn gte(&self, other: &Self) -> Result<bool> {
+    pub fn gte(&self, other: &Self) -> LoxTypeResult<bool> {
         match (self, other) {
             (LoxType::Number(l), LoxType::Number(r)) => Ok(l >= r),
-            _ => bail!(">= only defined for Number."),
+            _ => lox_type_bail!(">= only defined for Number."),
         }
     }
 
-    pub fn lt(&self, other: &Self) -> Result<bool> {
+    pub fn lt(&self, other: &Self) -> LoxTypeResult<bool> {
         match (self, other) {
             (LoxType::Number(l), LoxType::Number(r)) => Ok(l < r),
-            _ => bail!("< only defined for Number."),
+            _ => lox_type_bail!("< only defined for Number."),
         }
     }
 
-    pub fn lte(&self, other: &Self) -> Result<bool> {
+    pub fn lte(&self, other: &Self) -> LoxTypeResult<bool> {
         match (self, other) {
             (LoxType::Number(l), LoxType::Number(r)) => Ok(l <= r),
-            _ => bail!("<= only defined for Number."),
+            _ => lox_type_bail!("<= only defined for Number."),
         }
     }
 }
 
 impl std::ops::Add for LoxType {
-    type Output = Result<Self>;
+    type Output = LoxTypeResult<Self>;
 
     fn add(self, rhs: Self) -> Self::Output {
         Ok(match (self, rhs) {
             (LoxType::Number(l), LoxType::Number(r)) => LoxType::Number(l + r),
             (LoxType::String(l), LoxType::String(r)) => LoxType::String(format!("{}{}", l, r)),
-            _ => bail!("Invalid addition on LoxType."),
+            _ => lox_type_bail!("Invalid addition on LoxType."),
         })
     }
 }
 
 impl std::ops::Sub for LoxType {
-    type Output = Result<Self>;
+    type Output = LoxTypeResult<Self>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         Ok(match (self, rhs) {
             (LoxType::Number(l), LoxType::Number(r)) => LoxType::Number(l - r),
-            _ => bail!("Invalid addition on LoxType."),
+            _ => lox_type_bail!("Invalid addition on LoxType."),
         })
     }
 }
 
 impl std::ops::Mul for LoxType {
-    type Output = Result<Self>;
+    type Output = LoxTypeResult<Self>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         Ok(match (self, rhs) {
             (LoxType::Number(l), LoxType::Number(r)) => LoxType::Number(l * r),
-            _ => bail!("Invalid addition on LoxType."),
+            _ => lox_type_bail!("Invalid addition on LoxType."),
         })
     }
 }
 
 impl std::ops::Div for LoxType {
-    type Output = Result<Self>;
+    type Output = LoxTypeResult<Self>;
 
     fn div(self, rhs: Self) -> Self::Output {
         Ok(match (self, rhs) {
             (LoxType::Number(l), LoxType::Number(r)) => LoxType::Number(l / r),
-            _ => bail!("Invalid addition on LoxType."),
+            _ => lox_type_bail!("Invalid addition on LoxType."),
         })
     }
 }

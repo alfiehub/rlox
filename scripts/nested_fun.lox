@@ -1,0 +1,25 @@
+fun makeCounter() {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    print i;
+  }
+
+  return count;
+}
+
+var i = 100;
+var counter = makeCounter();
+print i;
+counter();
+counter();
+counter();
+counter();
+counter();
+
+var counter2 = makeCounter();
+counter2();
+counter2();
+counter2();
+
+print i;

@@ -1,13 +1,13 @@
+use anyhow::{anyhow, Result};
 use clap::Parser;
-use anyhow::Result;
 use interpreter::Interpreter;
 
 mod ast;
-mod scanner;
-mod token;
-mod parser;
 mod interpreter;
 mod lox_type;
+mod parser;
+mod scanner;
+mod token;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -20,7 +20,9 @@ fn run(code: String, interpreter: &mut Interpreter) -> Result<()> {
     let tokens = scanner::Scanner::scan(&code)?;
     let mut parser = parser::Parser::new(tokens);
     let ast = parser.parse()?;
-    interpreter.interpret(&ast)?;
+    interpreter
+        .interpret(&ast)
+        .map_err(|e| anyhow!(format!("{e:?}")))?;
     Ok(())
 }
 
@@ -37,7 +39,7 @@ fn run_prompt() -> Result<()> {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         run(input, &mut interpreter)?;
-    };
+    }
 }
 
 fn main() -> Result<()> {
