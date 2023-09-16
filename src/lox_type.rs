@@ -2,11 +2,12 @@ use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{ast::Statement, interpreter::Environment};
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub enum LoxType {
     Number(f64),
     String(String),
     Boolean(bool),
+    #[default]
     Nil,
     Function(Statement, Rc<RefCell<Environment>>),
     NativeFunction {

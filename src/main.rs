@@ -6,6 +6,7 @@ mod ast;
 mod interpreter;
 mod lox_type;
 mod parser;
+mod visitor;
 mod scanner;
 mod token;
 
