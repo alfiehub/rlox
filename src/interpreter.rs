@@ -77,7 +77,8 @@ impl Environment {
     }
 }
 
-pub struct Interpreter {
+pub struct Interpreter<T: std::io::Write = std::io::Stdout> {
+    writer: T,
     environment: Rc<RefCell<Environment>>,
 }
 
@@ -105,9 +106,22 @@ impl From<LoxTypeError> for InterpreterError {
     }
 }
 
+impl<T: std::io::Write> From<T> for Interpreter<T> {
+    fn from(value: T) -> Self {
+        Self::new_from_writer(value)
+    }
+}
+
 type InterpreterResult<T> = Result<T, InterpreterError>;
-impl Interpreter {
+
+impl Interpreter<std::io::Stdout> {
     pub fn new() -> Self {
+        std::io::stdout().into()
+    }
+}
+
+impl<T: std::io::Write> Interpreter<T> {
+    pub fn new_from_writer(writer: T) -> Self {
         let environment = Environment::new();
         environment.borrow_mut().create(
             "clock".to_string(),
@@ -123,7 +137,7 @@ impl Interpreter {
                 },
             }),
         );
-        let mut interpreter = Self { environment };
+        let mut interpreter = Self { environment, writer };
         interpreter.nest_environment();
         interpreter
     }
@@ -178,7 +192,8 @@ impl Interpreter {
                 self.evaluate_expression(expr)?;
             }
             Statement::Print(expr) => {
-                println!("{}", self.evaluate_expression(expr)?);
+                let output = self.evaluate_expression(expr)?;
+                write!(self.writer, "{}\n", output).unwrap();
             }
             Statement::Block(declarations) => {
                 self.nest_environment();
@@ -393,6 +408,14 @@ mod tests {
 
     use super::*;
 
+    macro_rules! parse {
+        ($program:expr) => {{
+            let tokens = Scanner::scan($program).unwrap();
+            let mut parser = Parser::new(tokens);
+            parser.parse().unwrap()
+        }};
+    }
+
     #[test]
     fn test_evaluate_expressions() {
         let expressions = vec![
@@ -472,22 +495,22 @@ mod tests {
 
     #[test]
     fn test_function_multiple_arguments() {
-        let program = "
+        let program = parse!(
+            "
             fun add(a, b, c) {
               print a + b + c;
             }
 
             add(1, 2, 3);
-        ";
-        let tokens = Scanner::scan(program).unwrap();
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        "
+        );
         Interpreter::new().interpret(&program).unwrap()
     }
 
     #[test]
     fn test_nested_function_environment() {
-        let program = "
+        let program = parse!(
+            "
             fun makeCounter() {
               var i = 0;
               fun count() {
@@ -500,15 +523,54 @@ mod tests {
             var i = 100;
             var counter = makeCounter();
             counter();
-        ";
-        let tokens = Scanner::scan(program).unwrap();
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        "
+        );
         let mut interpreter = Interpreter::new();
         interpreter.interpret(&program).unwrap();
         match interpreter.environment.clone().borrow().get("i") {
             Ok(Some(LoxType::Number(n))) => assert_eq!(n, 100.0),
             _ => panic!("No i in environment"),
         }
+    }
+
+    #[test]
+    fn test_fib_for_loop() {
+        let program = parse!(
+            "
+                var a = 0;
+                var temp;
+
+                for (var b = 1; a < 10000; b = temp + b) {
+                  temp = a;
+                  a = b;
+                }
+                print a;
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output).interpret(&program).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "10946\n".to_string());
+    }
+
+    #[test]
+    fn test_static_scope() {
+        // `a` referenced in showA should be static
+        let program = parse!(
+            "
+            var a = \"global\";
+            {
+              fun showA() {
+                print a;
+              }
+
+              showA();
+              var a = \"block\";
+              showA();
+            }
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output).interpret(&program).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "global\nglobal\n".to_string());
     }
 }
