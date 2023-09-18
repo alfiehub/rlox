@@ -5,10 +5,12 @@ use interpreter::Interpreter;
 mod ast;
 mod interpreter;
 mod lox_type;
+mod macros;
 mod parser;
-mod visitor;
+mod printer;
 mod scanner;
 mod token;
+mod visitor;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]

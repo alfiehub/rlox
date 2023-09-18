@@ -10,8 +10,8 @@ use anyhow::Result;
 use crate::{
     ast::{Declaration, Expression, Identifier, Literal, Operator, Statement, UnaryOperator},
     lox_type::{LoxType, LoxTypeError},
-    visitor::{DeclarationVisitor, ExpressionVisitor, StatementVisitor},
     token::{Token, TokenType},
+    visitor::{DeclarationVisitor, ExpressionVisitor, StatementVisitor},
 };
 
 #[derive(Debug)]
@@ -124,7 +124,7 @@ impl Interpreter<std::io::Stdout> {
     }
 }
 
-impl<T: std::io::Write> DeclarationVisitor<LoxType, InterpreterError> for Interpreter<T> {
+impl<T: std::io::Write> DeclarationVisitor<Result<LoxType, InterpreterError>> for Interpreter<T> {
     fn variable(
         &mut self,
         ident: Identifier,
@@ -150,7 +150,7 @@ impl<T: std::io::Write> DeclarationVisitor<LoxType, InterpreterError> for Interp
     }
 }
 
-impl<T: std::io::Write> StatementVisitor<LoxType, InterpreterError> for Interpreter<T> {
+impl<T: std::io::Write> StatementVisitor<Result<LoxType, InterpreterError>> for Interpreter<T> {
     fn expression(&mut self, expr: Expression) -> Result<LoxType, InterpreterError> {
         self.visit_expression(expr)?;
         Ok(LoxType::default())
@@ -239,7 +239,7 @@ impl<T: std::io::Write> StatementVisitor<LoxType, InterpreterError> for Interpre
     }
 }
 
-impl<T: std::io::Write> ExpressionVisitor<LoxType, InterpreterError> for Interpreter<T> {
+impl<T: std::io::Write> ExpressionVisitor<Result<LoxType, InterpreterError>> for Interpreter<T> {
     fn unary(
         &mut self,
         operator: UnaryOperator,
@@ -467,18 +467,11 @@ impl<T: std::io::Write> Interpreter<T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parse;
     use crate::parser::Parser;
     use crate::scanner::Scanner;
 
     use super::*;
-
-    macro_rules! parse {
-        ($program:expr) => {{
-            let tokens = Scanner::scan($program).unwrap();
-            let mut parser = Parser::new(tokens);
-            parser.parse().unwrap()
-        }};
-    }
 
     #[test]
     fn test_evaluate_expressions() {

@@ -2,8 +2,8 @@ use crate::ast::{
     Declaration, Expression, Identifier, Literal, Operator, Statement, UnaryOperator,
 };
 
-pub trait ExpressionVisitor<R: Default = (), E = ()> {
-    fn visit_expression(&mut self, expr: Expression) -> Result<R, E> {
+pub trait ExpressionVisitor<R> {
+    fn visit_expression(&mut self, expr: Expression) -> R {
         match expr {
             Expression::Unary(op, expr) => self.unary(op, *expr),
             Expression::Binary(left_expr, op, right_expr) => {
@@ -19,41 +19,17 @@ pub trait ExpressionVisitor<R: Default = (), E = ()> {
         }
     }
 
-    fn unary(&mut self, _op: UnaryOperator, _expr: Expression) -> Result<R, E> {
-        Ok(R::default())
-    }
-    fn binary(
-        &mut self,
-        _left_expr: Expression,
-        _op: Operator,
-        _right_expr: Expression,
-    ) -> Result<R, E> {
-        Ok(R::default())
-    }
-    fn logical(
-        &mut self,
-        _left_expr: Expression,
-        _op: Operator,
-        _right_expr: Expression,
-    ) -> Result<R, E> {
-        Ok(R::default())
-    }
-    fn grouping(&mut self, _expr: Expression) -> Result<R, E> {
-        Ok(R::default())
-    }
-    fn literal(&mut self, _lit: Literal) -> Result<R, E> {
-        Ok(R::default())
-    }
-    fn assignment(&mut self, _ident: Identifier, _expr: Expression) -> Result<R, E> {
-        Ok(R::default())
-    }
-    fn call(&mut self, _f: Expression, _args: Vec<Expression>) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn unary(&mut self, _op: UnaryOperator, _expr: Expression) -> R;
+    fn binary(&mut self, _left_expr: Expression, _op: Operator, _right_expr: Expression) -> R;
+    fn logical(&mut self, _left_expr: Expression, _op: Operator, _right_expr: Expression) -> R;
+    fn grouping(&mut self, _expr: Expression) -> R;
+    fn literal(&mut self, _lit: Literal) -> R;
+    fn assignment(&mut self, _ident: Identifier, _expr: Expression) -> R;
+    fn call(&mut self, _f: Expression, _args: Vec<Expression>) -> R;
 }
 
-pub trait StatementVisitor<R: Default = (), E = ()> {
-    fn visit_statement(&mut self, stmt: Statement) -> Result<R, E> {
+pub trait StatementVisitor<R> {
+    fn visit_statement(&mut self, stmt: Statement) -> R {
         match stmt {
             Statement::Expression(expr) => self.expression(expr),
             Statement::Print(expr) => self.print(expr),
@@ -67,58 +43,38 @@ pub trait StatementVisitor<R: Default = (), E = ()> {
         }
     }
 
-    fn expression(&mut self, _expr: Expression) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn expression(&mut self, _expr: Expression) -> R;
 
-    fn print(&mut self, _expr: Expression) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn print(&mut self, _expr: Expression) -> R;
 
     fn if_statement(
         &mut self,
         _condition: Expression,
         _then_branch: Statement,
         _else_branch: Option<Statement>,
-    ) -> Result<R, E> {
-        Ok(R::default())
-    }
+    ) -> R;
 
-    fn block(&mut self, _decls: Vec<Declaration>) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn block(&mut self, _decls: Vec<Declaration>) -> R;
 
-    fn while_statement(&mut self, _expr: Expression, _stmt: Statement) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn while_statement(&mut self, _expr: Expression, _stmt: Statement) -> R;
 
-    fn function(
-        &mut self,
-        _ident: Identifier,
-        _arg_idents: Vec<Identifier>,
-        _stmt: Statement,
-    ) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn function(&mut self, _ident: Identifier, _arg_idents: Vec<Identifier>, _stmt: Statement)
+        -> R;
 
-    fn return_statement(&mut self, _expr: Option<Expression>) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn return_statement(&mut self, _expr: Option<Expression>) -> R;
 }
 
-pub trait DeclarationVisitor<R: Default = (), E = ()> {
-    fn visit_declaration(&mut self, decl: Declaration) -> Result<R, E> {
+pub trait DeclarationVisitor<R> {
+    fn visit_declaration(&mut self, decl: Declaration) -> R {
         match decl {
             Declaration::Variable(ident, expr) => self.variable(ident, expr),
             Declaration::Statement(stmt) => self.statement(stmt),
         }
     }
 
-    fn variable(&mut self, _ident: Identifier, _expr: Option<Expression>) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn variable(&mut self, _ident: Identifier, _expr: Option<Expression>) -> R;
 
-    fn statement(&mut self, _stmt: Statement) -> Result<R, E> {
-        Ok(R::default())
-    }
+    fn statement(&mut self, _stmt: Statement) -> R;
 }
+
+pub trait Visitor<R>: DeclarationVisitor<R> + StatementVisitor<R> + ExpressionVisitor<R> {}

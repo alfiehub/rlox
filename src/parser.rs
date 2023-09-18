@@ -338,7 +338,7 @@ impl Parser {
         Ok(identifiers)
     }
 
-    fn declaration(&mut self) -> Result<Declaration> {
+    pub fn declaration(&mut self) -> Result<Declaration> {
         let declaration = if self.peek().token_type == TokenType::Var {
             self.advance();
             let identifier = match self.peek().token_type {
