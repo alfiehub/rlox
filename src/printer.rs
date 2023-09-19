@@ -1,6 +1,6 @@
 use crate::{
-    ast::Declaration,
-    visitor::{DeclarationVisitor, ExpressionVisitor, StatementVisitor},
+    ast::{Declaration, Expression},
+    visitor::Visitor,
 };
 
 struct Printer {
@@ -19,7 +19,7 @@ impl Printer {
             .replace(";", ";\n")
             .replace("{", "{\n")
             .replace("}", "}\n")
-             // unfuck else
+            // unfuck else
             .replace("}\n else", "} else")
     }
 }
@@ -30,166 +30,117 @@ macro_rules! padded_format {
     }}
 }
 
-impl DeclarationVisitor<String> for Printer {
-    fn variable(
-        &mut self,
-        ident: crate::ast::Identifier,
-        expr: Option<crate::ast::Expression>,
-    ) -> String {
-        if let Some(expr) = expr {
-            format!("var {ident} = {};", self.visit_expression(expr))
-        } else {
-            format!("var {ident};")
+impl Visitor<String> for Printer {
+    fn visit_declaration(&mut self, decl: Declaration) -> String {
+        match decl {
+            Declaration::Variable(ident, expr) => {
+                if let Some(expr) = expr {
+                    format!("var {ident} = {};", self.visit_expression(expr))
+                } else {
+                    format!("var {ident};")
+                }
+            }
+            Declaration::Statement(stmt) => self.visit_statement(stmt),
         }
     }
 
-    fn statement(&mut self, stmt: crate::ast::Statement) -> String {
-        self.visit_statement(stmt)
-    }
-}
-
-impl ExpressionVisitor<String> for Printer {
-    fn unary(&mut self, op: crate::ast::UnaryOperator, expr: crate::ast::Expression) -> String {
-        format!("{op} {}", self.visit_expression(expr))
-    }
-
-    fn binary(
-        &mut self,
-        left_expr: crate::ast::Expression,
-        op: crate::ast::Operator,
-        right_expr: crate::ast::Expression,
-    ) -> String {
-        format!(
-            "{} {op} {}",
-            self.visit_expression(left_expr),
-            self.visit_expression(right_expr)
-        )
-    }
-
-    fn logical(
-        &mut self,
-        left_expr: crate::ast::Expression,
-        op: crate::ast::Operator,
-        right_expr: crate::ast::Expression,
-    ) -> String {
-        format!(
-            "{} {op} {}",
-            self.visit_expression(left_expr),
-            self.visit_expression(right_expr)
-        )
-    }
-
-    fn grouping(&mut self, expr: crate::ast::Expression) -> String {
-        format!("({})", self.visit_expression(expr))
-    }
-
-    fn literal(&mut self, lit: crate::ast::Literal) -> String {
-        let o = match lit.0.token_type {
-            crate::token::TokenType::String(s) => format!("\"{s}\""),
-            crate::token::TokenType::Number(n) => format!("{n}"),
-            _ => lit.to_string(),
-        };
-        o
-    }
-
-    fn assignment(
-        &mut self,
-        ident: crate::ast::Identifier,
-        expr: crate::ast::Expression,
-    ) -> String {
-        format!("{ident} = {}", self.visit_expression(expr))
-    }
-
-    fn call(&mut self, f: crate::ast::Expression, args: Vec<crate::ast::Expression>) -> String {
-        format!(
-            "{}({})",
-            self.visit_expression(f),
-            args.into_iter()
-                .map(|arg| self.visit_expression(arg))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
-    }
-}
-
-impl StatementVisitor<String> for Printer {
-    fn expression(&mut self, expr: crate::ast::Expression) -> String {
-        format!("{};", self.visit_expression(expr))
-    }
-
-    fn print(&mut self, expr: crate::ast::Expression) -> String {
-        format!("print {};", self.visit_expression(expr))
-    }
-
-    fn if_statement(
-        &mut self,
-        condition: crate::ast::Expression,
-        then_branch: crate::ast::Statement,
-        else_branch: Option<crate::ast::Statement>,
-    ) -> String {
-        let then_branch = self.visit_statement(then_branch);
-        if let Some(else_branch) = else_branch {
-            let else_branch = self.visit_statement(else_branch);
-            format!(
-                "if ({}) {} else {}",
-                self.visit_expression(condition),
-                then_branch,
-                else_branch
-            )
-        } else {
-            format!("if ({}) {}", self.visit_expression(condition), then_branch)
+    fn visit_expression(&mut self, expr: Expression) -> String {
+        match expr {
+            Expression::Unary(op, expr) => {
+                format!("{op} {}", self.visit_expression(*expr))
+            }
+            Expression::Binary(left_expr, op, right_expr) => format!(
+                "{} {op} {}",
+                self.visit_expression(*left_expr),
+                self.visit_expression(*right_expr)
+            ),
+            Expression::Logical(left_expr, op, right_expr) => format!(
+                "{} {op} {}",
+                self.visit_expression(*left_expr),
+                self.visit_expression(*right_expr)
+            ),
+            Expression::Grouping(expr) => format!("({})", self.visit_expression(*expr)),
+            Expression::Literal(lit) => {
+                let o = match lit.0.token_type {
+                    crate::token::TokenType::String(s) => format!("\"{s}\""),
+                    crate::token::TokenType::Number(n) => format!("{n}"),
+                    _ => lit.to_string(),
+                };
+                o
+            }
+            Expression::Assignment(ident, expr) => {
+                format!("{ident} = {}", self.visit_expression(*expr))
+            }
+            Expression::Call(f, args) => {
+                format!(
+                    "{}({})",
+                    self.visit_expression(*f),
+                    args.into_iter()
+                        .map(|arg| self.visit_expression(arg))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
         }
     }
 
-    fn block(&mut self, decls: Vec<crate::ast::Declaration>) -> String {
-        self.depth += 1;
-        let output = format!(
-            "{{{}{}",
-            decls
-                .into_iter()
-                .map(|d| padded_format!(self.depth, "{}", self.visit_declaration(d)))
-                .collect::<String>(),
-            padded_format!(self.depth - 1, "}}")
-        );
-        self.depth -= 1;
-        output
-    }
-
-    fn while_statement(
-        &mut self,
-        expr: crate::ast::Expression,
-        stmt: crate::ast::Statement,
-    ) -> String {
-        format!(
-            "while ({}) {}",
-            self.visit_expression(expr),
-            self.visit_statement(stmt)
-        )
-    }
-
-    fn function(
-        &mut self,
-        ident: crate::ast::Identifier,
-        arg_idents: Vec<crate::ast::Identifier>,
-        stmt: crate::ast::Statement,
-    ) -> String {
-        let block = self.visit_statement(stmt);
-        format!(
-            "fun {ident}({}) {}",
-            arg_idents
-                .into_iter()
-                .map(|a| a.to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-            block
-        )
-    }
-
-    fn return_statement(&mut self, expr: Option<crate::ast::Expression>) -> String {
-        if let Some(expr) = expr {
-            format!("return {};", self.visit_expression(expr))
-        } else {
-            format!("return;")
+    fn visit_statement(&mut self, stmt: crate::ast::Statement) -> String {
+        match stmt {
+            crate::ast::Statement::Expression(expr) => format!("{};", self.visit_expression(expr)),
+            crate::ast::Statement::Print(expr) => format!("print {};", self.visit_expression(expr)),
+            crate::ast::Statement::If(condition, then_branch, else_branch) => {
+                let then_branch = self.visit_statement(*then_branch);
+                if let Some(else_branch) = else_branch {
+                    let else_branch = self.visit_statement(*else_branch);
+                    format!(
+                        "if ({}) {} else {}",
+                        self.visit_expression(condition),
+                        then_branch,
+                        else_branch
+                    )
+                } else {
+                    format!("if ({}) {}", self.visit_expression(condition), then_branch)
+                }
+            }
+            crate::ast::Statement::Block(decls) => {
+                self.depth += 1;
+                let output = format!(
+                    "{{{}{}",
+                    decls
+                        .into_iter()
+                        .map(|d| padded_format!(self.depth, "{}", self.visit_declaration(d)))
+                        .collect::<String>(),
+                    padded_format!(self.depth - 1, "}}")
+                );
+                self.depth -= 1;
+                output
+            }
+            crate::ast::Statement::While(expr, stmt) => {
+                format!(
+                    "while ({}) {}",
+                    self.visit_expression(expr),
+                    self.visit_statement(*stmt)
+                )
+            }
+            crate::ast::Statement::Function(ident, arg_idents, body) => {
+                let body = self.visit_statement(*body);
+                format!(
+                    "fun {ident}({}) {}",
+                    arg_idents
+                        .into_iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    body
+                )
+            }
+            crate::ast::Statement::Return(expr) => {
+                if let Some(expr) = expr {
+                    format!("return {};", self.visit_expression(expr))
+                } else {
+                    format!("return;")
+                }
+            }
         }
     }
 }
@@ -198,10 +149,9 @@ impl StatementVisitor<String> for Printer {
 
 #[cfg(test)]
 mod tests {
-    use crate::visitor::DeclarationVisitor;
-
     use super::Printer;
     use crate::parse;
+    use crate::visitor::Visitor;
 
     #[test]
     fn test_declaration_function() {
