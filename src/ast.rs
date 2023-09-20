@@ -33,46 +33,26 @@ single_token_display!(Operator);
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Unary(UnaryOperator, Box<Expression>),
+    Assign(Identifier, Box<Expression>),
     Binary(Box<Expression>, Operator, Box<Expression>),
-    Logical(Box<Expression>, Operator, Box<Expression>),
+    Call(Box<Expression>, Vec<Expression>),
     Grouping(Box<Expression>),
     Literal(Literal),
-    Assignment(Identifier, Box<Expression>),
-    Call(Box<Expression>, Vec<Expression>),
+    Logical(Box<Expression>, Operator, Box<Expression>),
+    Unary(UnaryOperator, Box<Expression>),
+    Variable(Identifier),
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
+    Block(Vec<Statement>),
     Expression(Expression),
-    Print(Expression),
-    If(Expression, Box<Statement>, Option<Box<Statement>>),
-    Block(Vec<Declaration>),
-    While(Expression, Box<Statement>),
     Function(Identifier, Vec<Identifier>, Box<Statement>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
+    Print(Expression),
     Return(Option<Expression>),
-}
-
-#[derive(Debug, Clone)]
-pub enum Declaration {
+    While(Expression, Box<Statement>),
     Variable(Identifier, Option<Expression>),
-    Statement(Statement),
-}
-
-impl Display for Declaration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Declaration::Variable(identifier, expression) => write!(
-                f,
-                "(var {} {})",
-                identifier.0,
-                expression
-                    .as_ref()
-                    .map_or("None".to_string(), |f| f.to_string())
-            ),
-            Declaration::Statement(statement) => write!(f, "{}", statement),
-        }
-    }
 }
 
 impl Display for Statement {
@@ -81,26 +61,23 @@ impl Display for Statement {
             Statement::Expression(expression) => write!(f, "{}", expression),
             Statement::Print(expression) => write!(f, "(print {})", expression),
             Statement::Block(statements) => write!(f, "{{ {:?} }}", statements),
+
+            Statement::Variable(identifier, expression) => write!(
+                f,
+                "(var {} {})",
+                identifier.0,
+                expression
+                    .as_ref()
+                    .map_or("None".to_string(), |f| f.to_string())
+            ),
             _ => write!(f, "Not implemented"),
         }
-    }
-}
-
-impl From<Statement> for Declaration {
-    fn from(value: Statement) -> Self {
-        Declaration::Statement(value)
     }
 }
 
 impl From<Expression> for Statement {
     fn from(value: Expression) -> Self {
         Statement::Expression(value)
-    }
-}
-
-impl From<Expression> for Declaration {
-    fn from(value: Expression) -> Self {
-        Declaration::Statement(value.into())
     }
 }
 
@@ -133,7 +110,7 @@ impl Display for Expression {
                 }
                 Expression::Grouping(expression) => parenthesize("group", &[expression]),
                 Expression::Literal(literal) => literal.0.token_type.to_string(),
-                Expression::Assignment(identifier, expression) =>
+                Expression::Assign(identifier, expression) =>
                     parenthesize(&identifier.0.token_type.to_string(), &[expression]),
                 _ => todo!("Not implemented"),
             }

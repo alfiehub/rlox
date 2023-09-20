@@ -8,7 +8,7 @@ use std::{
 use anyhow::Result;
 
 use crate::{
-    ast::{Declaration, Expression, Statement},
+    ast::{Expression, Statement},
     lox_type::{LoxType, LoxTypeError},
     token::{Token, TokenType},
     visitor::Visitor,
@@ -125,27 +125,6 @@ impl Interpreter<std::io::Stdout> {
 }
 
 impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpreter<T> {
-    fn visit_declaration(&mut self, decl: Declaration) -> Result<LoxType, InterpreterError> {
-        match decl {
-            Declaration::Variable(ident, expr) => {
-                if let TokenType::Identifier(ident) = &ident.0.token_type {
-                    let value = expr
-                        .as_ref()
-                        // TODO: avoid clone
-                        .map(|expr| self.visit_expression(expr.clone()))
-                        .transpose()?;
-                    self.environment.borrow_mut().create(ident.clone(), value);
-                } else {
-                    return Err(InterpreterError::Unexpected(format!(
-                        "Expected identifier, got {ident:?}"
-                    )));
-                }
-                Ok(LoxType::Nil)
-            }
-            Declaration::Statement(stmt) => self.visit_statement(stmt),
-        }
-    }
-
     fn visit_statement(&mut self, stmt: Statement) -> Result<LoxType, InterpreterError> {
         match stmt {
             Statement::Expression(expr) => {
@@ -165,13 +144,13 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 }
                 Ok(LoxType::default())
             }
-            Statement::Block(decls) => {
+            Statement::Block(stmts) => {
                 self.nest_environment();
                 let mut i = 0;
                 let return_value = loop {
-                    let decl = &decls[i];
+                    let stmt = &stmts[i];
                     // TODO: avoid clone
-                    match self.visit_declaration(decl.clone()) {
+                    match self.visit_statement(stmt.clone()) {
                         Err(e) => match e {
                             InterpreterError::Return(value) => break value.clone(),
                             _ => return Err(e),
@@ -179,7 +158,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         _ => {}
                     }
                     i += 1;
-                    if i == decls.len() {
+                    if i == stmts.len() {
                         break LoxType::Nil;
                     }
                 };
@@ -213,6 +192,21 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 } else {
                     Err(InterpreterError::Return(LoxType::Nil))
                 }
+            }
+            Statement::Variable(ident, expr) => {
+                if let TokenType::Identifier(ident) = &ident.0.token_type {
+                    let value = expr
+                        .as_ref()
+                        // TODO: avoid clone
+                        .map(|expr| self.visit_expression(expr.clone()))
+                        .transpose()?;
+                    self.environment.borrow_mut().create(ident.clone(), value);
+                } else {
+                    return Err(InterpreterError::Unexpected(format!(
+                        "Expected identifier, got {ident:?}"
+                    )));
+                }
+                Ok(LoxType::Nil)
             }
         }
     }
@@ -273,25 +267,9 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 TokenType::True => true.into(),
                 TokenType::False => false.into(),
                 TokenType::Nil => LoxType::Nil,
-                TokenType::Identifier(identifier) => {
-                    match self
-                        .environment
-                        .borrow()
-                        .get(&identifier)
-                        .map_err(|e| InterpreterError::GenericError(e.to_string()))?
-                    {
-                        Some(value) => value,
-                        None => {
-                            return Err(InterpreterError::UninitializedVariable(format!(
-                                "Uninitialized variable '{}'",
-                                identifier
-                            )))
-                        }
-                    }
-                }
                 _ => return Err(InterpreterError::GenericError(format!("Invalid literal"))),
             }),
-            Expression::Assignment(ident, expr) => {
+            Expression::Assign(ident, expr) => {
                 let value = self.visit_expression(*expr)?;
                 if let TokenType::Identifier(identifier) = &ident.0.token_type {
                     self.environment
@@ -316,10 +294,8 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                                 args.len()
                             ))
                         }
-                        let argument_values: InterpreterResult<Vec<LoxType>> = args
-                            .into_iter()
-                            .map(|a| self.visit_expression(a))
-                            .collect();
+                        let argument_values: InterpreterResult<Vec<LoxType>> =
+                            args.into_iter().map(|a| self.visit_expression(a)).collect();
                         func(argument_values?)
                     }
                     LoxType::Function(func, environment) => {
@@ -364,6 +340,22 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 self.unnest_environment();
                 Ok(return_value)
             }
+            Expression::Variable(ident) => {
+                match self
+                    .environment
+                    .borrow()
+                    .get(&ident.to_string())
+                    .map_err(|e| InterpreterError::GenericError(e.to_string()))?
+                {
+                    Some(value) => Ok(value),
+                    None => {
+                        return Err(InterpreterError::UninitializedVariable(format!(
+                            "Uninitialized variable '{}'",
+                            ident
+                        )))
+                    }
+                }
+            }
         }
     }
 }
@@ -407,10 +399,10 @@ impl<T: std::io::Write> Interpreter<T> {
         }
     }
 
-    pub fn interpret(&mut self, declarations: &[Declaration]) -> InterpreterResult<()> {
-        for decl in declarations {
+    pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
+        for stmt in stmts {
             // TODO: avoid clone
-            self.visit_declaration(decl.clone())?;
+            self.visit_statement(stmt.clone())?;
         }
         Ok(())
     }

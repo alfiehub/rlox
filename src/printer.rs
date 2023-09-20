@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Declaration, Expression},
+    ast::{Expression, Statement},
     visitor::Visitor,
 };
 
@@ -12,9 +12,9 @@ impl Printer {
         Self { depth: 0 }
     }
 
-    fn print(&mut self, decl: Vec<Declaration>) -> String {
+    fn print(&mut self, decl: Vec<Statement>) -> String {
         decl.into_iter()
-            .map(|d| self.visit_declaration(d))
+            .map(|d| self.visit_statement(d))
             .collect::<String>()
             .replace(";", ";\n")
             .replace("{", "{\n")
@@ -31,19 +31,6 @@ macro_rules! padded_format {
 }
 
 impl Visitor<String> for Printer {
-    fn visit_declaration(&mut self, decl: Declaration) -> String {
-        match decl {
-            Declaration::Variable(ident, expr) => {
-                if let Some(expr) = expr {
-                    format!("var {ident} = {};", self.visit_expression(expr))
-                } else {
-                    format!("var {ident};")
-                }
-            }
-            Declaration::Statement(stmt) => self.visit_statement(stmt),
-        }
-    }
-
     fn visit_expression(&mut self, expr: Expression) -> String {
         match expr {
             Expression::Unary(op, expr) => {
@@ -68,7 +55,7 @@ impl Visitor<String> for Printer {
                 };
                 o
             }
-            Expression::Assignment(ident, expr) => {
+            Expression::Assign(ident, expr) => {
                 format!("{ident} = {}", self.visit_expression(*expr))
             }
             Expression::Call(f, args) => {
@@ -81,14 +68,15 @@ impl Visitor<String> for Printer {
                         .join(", ")
                 )
             }
+            Expression::Variable(ident) => ident.to_string(),
         }
     }
 
-    fn visit_statement(&mut self, stmt: crate::ast::Statement) -> String {
+    fn visit_statement(&mut self, stmt: Statement) -> String {
         match stmt {
-            crate::ast::Statement::Expression(expr) => format!("{};", self.visit_expression(expr)),
-            crate::ast::Statement::Print(expr) => format!("print {};", self.visit_expression(expr)),
-            crate::ast::Statement::If(condition, then_branch, else_branch) => {
+            Statement::Expression(expr) => format!("{};", self.visit_expression(expr)),
+            Statement::Print(expr) => format!("print {};", self.visit_expression(expr)),
+            Statement::If(condition, then_branch, else_branch) => {
                 let then_branch = self.visit_statement(*then_branch);
                 if let Some(else_branch) = else_branch {
                     let else_branch = self.visit_statement(*else_branch);
@@ -102,27 +90,27 @@ impl Visitor<String> for Printer {
                     format!("if ({}) {}", self.visit_expression(condition), then_branch)
                 }
             }
-            crate::ast::Statement::Block(decls) => {
+            Statement::Block(decls) => {
                 self.depth += 1;
                 let output = format!(
                     "{{{}{}",
                     decls
                         .into_iter()
-                        .map(|d| padded_format!(self.depth, "{}", self.visit_declaration(d)))
+                        .map(|d| padded_format!(self.depth, "{}", self.visit_statement(d)))
                         .collect::<String>(),
                     padded_format!(self.depth - 1, "}}")
                 );
                 self.depth -= 1;
                 output
             }
-            crate::ast::Statement::While(expr, stmt) => {
+            Statement::While(expr, stmt) => {
                 format!(
                     "while ({}) {}",
                     self.visit_expression(expr),
                     self.visit_statement(*stmt)
                 )
             }
-            crate::ast::Statement::Function(ident, arg_idents, body) => {
+            Statement::Function(ident, arg_idents, body) => {
                 let body = self.visit_statement(*body);
                 format!(
                     "fun {ident}({}) {}",
@@ -134,11 +122,18 @@ impl Visitor<String> for Printer {
                     body
                 )
             }
-            crate::ast::Statement::Return(expr) => {
+            Statement::Return(expr) => {
                 if let Some(expr) = expr {
                     format!("return {};", self.visit_expression(expr))
                 } else {
                     format!("return;")
+                }
+            }
+            Statement::Variable(ident, expr) => {
+                if let Some(expr) = expr {
+                    format!("var {ident} = {};", self.visit_expression(expr))
+                } else {
+                    format!("var {ident};")
                 }
             }
         }
@@ -154,7 +149,7 @@ mod tests {
     use crate::visitor::Visitor;
 
     #[test]
-    fn test_declaration_function() {
+    fn test_statement_function() {
         let input = "\
 fun a() {
   var i = 1;
@@ -165,7 +160,7 @@ fun a() {
         let mut ast_printer = Printer::new();
         assert_eq!(
             input.replace("\n", ""),
-            ast_printer.visit_declaration(program).replace("\n", "")
+            ast_printer.visit_statement(program).replace("\n", "")
         );
     }
 

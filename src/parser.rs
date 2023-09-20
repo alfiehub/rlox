@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
 use crate::{
-    ast::{Declaration, Expression, Identifier, Literal, Operator, Statement, UnaryOperator},
+    ast::{Expression, Identifier, Literal, Operator, Statement, UnaryOperator},
     token::{Token, TokenType},
 };
 
@@ -86,14 +86,8 @@ impl Parser {
             TokenType::Equal => {
                 self.advance();
                 let value = self.assignment()?;
-                if let Expression::Literal(Literal(token)) = expr {
-                    if let Token {
-                        token_type: TokenType::Identifier(_),
-                        ..
-                    } = token
-                    {
-                        return Ok(Expression::Assignment(Identifier(token), Box::new(value)));
-                    }
+                if let Expression::Variable(ident) = expr {
+                    return Ok(Expression::Assign(ident, Box::new(value)));
                 }
                 bail!("Invalid assignment target.");
             }
@@ -120,7 +114,7 @@ impl Parser {
             }
             TokenType::Identifier(_) => {
                 self.advance();
-                Expression::Literal(Literal(token))
+                Expression::Variable(Identifier(token))
             }
             _ => {
                 bail!(
@@ -338,7 +332,7 @@ impl Parser {
         Ok(identifiers)
     }
 
-    pub fn declaration(&mut self) -> Result<Declaration> {
+    pub fn declaration(&mut self) -> Result<Statement> {
         let declaration = if self.peek().token_type == TokenType::Var {
             self.advance();
             let identifier = match self.peek().token_type {
@@ -358,7 +352,7 @@ impl Parser {
                 TokenType::Semicolon,
                 "Expected ';' after variable declaration.",
             )?;
-            Declaration::Variable(Identifier(identifier), expr)
+            Statement::Variable(Identifier(identifier), expr)
         } else if self.peek().token_type == TokenType::Fun {
             self.advance();
             let identifier = match self.peek().token_type {
@@ -378,18 +372,18 @@ impl Parser {
             )?;
 
             let body = self.statement()?;
-            Declaration::Statement(Statement::Function(
+            Statement::Function(
                 Identifier(identifier),
                 parameters,
                 body.into(),
-            ))
+            )
         } else {
-            Declaration::Statement(self.statement()?)
+            self.statement()?
         };
         Ok(declaration)
     }
 
-    fn program(&mut self) -> Result<Vec<Declaration>> {
+    fn program(&mut self) -> Result<Vec<Statement>> {
         let mut declarations = vec![];
         loop {
             match self.declaration() {
@@ -450,7 +444,7 @@ impl Parser {
         self.tokens[self.current - 1].clone()
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Declaration>> {
+    pub fn parse(&mut self) -> Result<Vec<Statement>> {
         self.program()
     }
 }
@@ -516,8 +510,8 @@ mod tests {
         let tokens = Scanner::scan(program).unwrap();
         let mut parser = Parser::new(tokens);
         let parsed = parser.parse().expect("Should be able to parse");
-        let decl = parsed.first().expect("Should be on declaration");
-        if let Declaration::Statement(Statement::Expression(Expression::Call(_, args))) = decl {
+        let stmt = parsed.first().expect("Should be on statement");
+        if let Statement::Expression(Expression::Call(_, args)) = stmt {
             assert_eq!(args.len(), 3, "Arguments of call should have length 3");
         } else {
             panic!()
