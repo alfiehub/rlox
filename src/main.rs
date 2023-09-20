@@ -8,6 +8,7 @@ mod lox_type;
 mod macros;
 mod parser;
 mod printer;
+mod resolver;
 mod scanner;
 mod token;
 mod visitor;

@@ -23,6 +23,19 @@ single_token_display!(Literal);
 pub struct Identifier(pub Token);
 single_token_display!(Identifier);
 
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub struct IdentifierKey(pub String);
+impl From<Identifier> for IdentifierKey {
+    fn from(value: Identifier) -> Self {
+        IdentifierKey(format!("{}@{}", value.to_string(), value.0.line))
+    }
+}
+impl From<&Identifier> for IdentifierKey {
+    fn from(value: &Identifier) -> Self {
+        IdentifierKey(format!("{}@{}", value.to_string(), value.0.line))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UnaryOperator(pub Token);
 single_token_display!(UnaryOperator);

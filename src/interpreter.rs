@@ -8,8 +8,9 @@ use std::{
 use anyhow::Result;
 
 use crate::{
-    ast::{Expression, Statement},
+    ast::{Expression, Identifier, IdentifierKey, Statement},
     lox_type::{LoxType, LoxTypeError},
+    resolver::Resolver,
     token::{Token, TokenType},
     visitor::Visitor,
 };
@@ -60,6 +61,37 @@ impl Environment {
         }
     }
 
+    fn ancestor(&self, distance: usize) -> Result<Rc<RefCell<Self>>, EnvironmentError> {
+        if distance > 1 {
+            if let Some(parent) = &self.parent {
+                parent.borrow().ancestor(distance - 1)
+            } else {
+                environment_bail!("No parent.")
+            }
+        } else {
+            self.parent
+                .as_ref()
+                .map(|e| e.clone())
+                .ok_or_else(|| EnvironmentError("No parent.".to_string()))
+        }
+    }
+
+    fn get_at_distance(
+        &self,
+        key: &str,
+        distance: Option<usize>,
+    ) -> Result<Option<LoxType>, EnvironmentError> {
+        if let Some(distance) = distance {
+            if distance <= 1 {
+                self.get(key)
+            } else {
+                self.ancestor(distance - 1)?.borrow().get(key)
+            }
+        } else {
+            self.get(key)
+        }
+    }
+
     fn create(&mut self, key: String, value: Option<LoxType>) {
         self.values.insert(key, value);
     }
@@ -76,10 +108,28 @@ impl Environment {
             }
         }
     }
+
+    fn assign_at_distance(
+        &mut self,
+        key: String,
+        value: Option<LoxType>,
+        distance: Option<usize>,
+    ) -> Result<(), EnvironmentError> {
+        if let Some(distance) = distance {
+            if distance == 1 {
+                self.assign(key, value)
+            } else {
+                self.ancestor(distance - 1)?.borrow_mut().assign(key, value)
+            }
+        } else {
+            self.assign(key, value)
+        }
+    }
 }
 
 pub struct Interpreter<T: std::io::Write = std::io::Stdout> {
     writer: T,
+    pub locals: HashMap<IdentifierKey, usize>,
     environment: Rc<RefCell<Environment>>,
 }
 
@@ -272,9 +322,11 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
             Expression::Assign(ident, expr) => {
                 let value = self.visit_expression(*expr)?;
                 if let TokenType::Identifier(identifier) = &ident.0.token_type {
-                    self.environment
-                        .borrow_mut()
-                        .assign(identifier.clone(), Some(value))?;
+                    self.environment.borrow_mut().assign_at_distance(
+                        identifier.clone(),
+                        Some(value),
+                        self.locals.get(&ident.into()).map_or(None, |d| Some(*d)),
+                    )?;
                 } else {
                     generic_bail!(format!("Expected identifier, got {:?}", ident));
                 }
@@ -344,7 +396,10 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 match self
                     .environment
                     .borrow()
-                    .get(&ident.to_string())
+                    .get_at_distance(
+                        &ident.to_string(),
+                        self.locals.get(&(&ident).into()).map_or(None, |d| Some(*d)),
+                    )
                     .map_err(|e| InterpreterError::GenericError(e.to_string()))?
                 {
                     Some(value) => Ok(value),
@@ -378,6 +433,7 @@ impl<T: std::io::Write> Interpreter<T> {
             }),
         );
         let mut interpreter = Self {
+            locals: HashMap::new(),
             environment,
             writer,
         };
@@ -399,7 +455,12 @@ impl<T: std::io::Write> Interpreter<T> {
         }
     }
 
+    pub fn resolve(&mut self, ident: Identifier, distance: usize) {
+        self.locals.insert(ident.into(), distance);
+    }
+
     pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
+        Resolver::new(self).resolve(stmts.to_vec());
         for stmt in stmts {
             // TODO: avoid clone
             self.visit_statement(stmt.clone())?;
@@ -568,6 +629,7 @@ mod tests {
               showA();
               var a = \"block\";
               showA();
+              print a;
             }
             "
         );
@@ -577,7 +639,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            "global\nglobal\n".to_string()
+            "global\nglobal\nblock\n".to_string()
         );
     }
 }
