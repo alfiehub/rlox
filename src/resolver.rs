@@ -14,7 +14,7 @@ pub struct Resolver<'a, T: std::io::Write> {
 impl<'a, T: std::io::Write> Resolver<'a, T> {
     pub fn new(interpreter: &'a mut Interpreter<T>) -> Self {
         Self {
-            scopes: vec![HashMap::new()],
+            scopes: vec![],
             interpreter,
         }
     }
@@ -26,10 +26,14 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, ident: Identifier) {
+    fn declare(&mut self, ident: Identifier) -> Result<(), ResolverError> {
         if let Some(current_scope) = self.scopes.last_mut() {
+            if current_scope.contains_key(&ident.to_string()) {
+                return Err(ResolverError::Redeclaration);
+            }
             current_scope.insert(ident.to_string(), false);
         }
+        Ok(())
     }
 
     fn define(&mut self, ident: Identifier) {
@@ -51,7 +55,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         self.begin_scope();
         if let Statement::Function(_, args, body) = fun {
             for arg in args.into_iter() {
-                self.declare(arg.clone());
+                self.declare(arg.clone())?;
                 self.define(arg);
             }
             self.visit_statement(*body)?;
@@ -60,17 +64,20 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         Ok(())
     }
 
-    pub fn resolve(&mut self, stmts: Vec<Statement>) {
+    pub fn resolve(&mut self, stmts: Vec<Statement>) -> Result<(), ResolverError> {
         for stmt in stmts {
-            self.visit_statement(stmt).unwrap();
+            self.visit_statement(stmt)?;
         }
+        Ok(())
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-enum ResolverError {
+#[derive(Eq, PartialEq, Debug, thiserror::Error)]
+pub enum ResolverError {
     #[error("Can't read local variable in its own initializer.")]
-    SelfInitialize
+    SelfInitialize,
+    #[error("Already a variable with this name in this scope.")]
+    Redeclaration,
 }
 
 #[allow(unused_variables)]
@@ -86,14 +93,14 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 self.end_scope();
             }
             Statement::Variable(ident, init) => {
-                self.declare(ident.clone());
+                self.declare(ident.clone())?;
                 if let Some(init) = init {
                     self.visit_expression(init)?;
                 }
                 self.define(ident);
             }
             Statement::Function(ident, _, body) => {
-                self.declare(ident.clone());
+                self.declare(ident.clone())?;
                 self.define(ident.clone());
                 self.resolve_function(stmt)?;
             }
@@ -113,6 +120,9 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
             Statement::While(cond, body) => {
                 self.visit_expression(cond)?;
                 self.visit_statement(*body)?;
+            }
+            Statement::Return(Some(expr)) => {
+                self.visit_expression(expr)?;
             }
             _ => {}
         };
@@ -143,11 +153,14 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 if let Some(current_scope) = self.scopes.last() {
                     if let Some(initialized) = current_scope.get(&ident.to_string()) {
                         if !initialized {
-                            return Err(ResolverError::SelfInitialize)
+                            return Err(ResolverError::SelfInitialize);
                         }
                     }
                 }
                 self.resolve_local(ident.clone());
+            }
+            Expression::Call(f, _) => {
+                self.visit_expression(*f.clone())?;
             }
             _ => {}
         };
@@ -157,7 +170,7 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{interpreter::Interpreter, parse, ast::IdentifierKey};
+    use crate::{ast::IdentifierKey, interpreter::Interpreter, parse, resolver::ResolverError};
 
     use super::Resolver;
 
@@ -171,6 +184,7 @@ mod tests {
                   var b = 1;
                   {
                       var a = c;
+                      var x = a;
                   }
                   var e = a;
                   var f = c;
@@ -180,10 +194,57 @@ mod tests {
         );
         let mut interpreter = Interpreter::new();
         let mut resolver = Resolver::new(&mut interpreter);
-        resolver.resolve(program);
-        assert_eq!(resolver.interpreter.locals.get(&IdentifierKey("a@3".into())), Some(&1));
-        assert_eq!(resolver.interpreter.locals.get(&IdentifierKey("c@7".into())), Some(&2));
-        assert_eq!(resolver.interpreter.locals.get(&IdentifierKey("a@9".into())), Some(&2));
-        assert_eq!(resolver.interpreter.locals.get(&IdentifierKey("c@10".into())), Some(&1));
+        resolver.resolve(program).unwrap();
+        let locals = interpreter.locals;
+        assert_eq!(locals.get(&IdentifierKey("a@3".into())), None);
+        assert_eq!(locals.get(&IdentifierKey("c@7".into())), Some(&2));
+        assert_eq!(locals.get(&IdentifierKey("a@8".into())), Some(&0));
+        assert_eq!(locals.get(&IdentifierKey("a@10".into())), None);
+        assert_eq!(locals.get(&IdentifierKey("c@11".into())), Some(&1));
+    }
+
+    #[test]
+    fn test_self_initialize() {
+        let program = parse!(
+            "
+            var a = 69;
+            {
+                var a = a;
+            }"
+        );
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        let error = resolver.resolve(program).unwrap_err();
+        assert_eq!(error, ResolverError::SelfInitialize)
+    }
+
+    #[test]
+    fn test_global_redeclaration() {
+        let program = parse!(
+            "
+            // Global scope is allowed
+            var a = 69;
+            var a = 70;
+            "
+        );
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        assert!(resolver.resolve(program).is_ok(), "Global redeclartions are allowed.");
+    }
+
+    #[test]
+    fn test_local_redeclaration() {
+        let program = parse!(
+            "
+            {
+                var a = 70;
+                var a = 69;
+            }
+            "
+        );
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        let error = resolver.resolve(program).unwrap_err();
+        assert_eq!(error, ResolverError::Redeclaration)
     }
 }

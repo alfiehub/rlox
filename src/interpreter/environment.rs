@@ -1,4 +1,4 @@
-use std::{rc::Rc, cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::lox_type::LoxType;
 
@@ -63,13 +63,18 @@ impl Environment {
         distance: Option<usize>,
     ) -> Result<Option<LoxType>, EnvironmentError> {
         if let Some(distance) = distance {
-            if distance <= 1 {
+            if distance == 0 {
                 self.get(key)
             } else {
                 self.ancestor(distance - 1)?.borrow().get(key)
             }
         } else {
-            self.get(key)
+            // We need to get global
+            if let Some(global) = self.global() {
+                global.borrow().get(key)
+            } else {
+                self.get(key)
+            }
         }
     }
 
@@ -97,14 +102,32 @@ impl Environment {
         distance: Option<usize>,
     ) -> Result<(), EnvironmentError> {
         if let Some(distance) = distance {
-            if distance == 1 {
+            if distance == 0 {
                 self.assign(key, value)
             } else {
                 self.ancestor(distance - 1)?.borrow_mut().assign(key, value)
             }
         } else {
-            self.assign(key, value)
+            // We need to go global
+            if let Some(global) = self.global() {
+                global.borrow_mut().assign(key, value)
+            } else {
+                self.assign(key, value)
+            }
+        }
+    }
+
+    fn global(&self) -> Option<Rc<RefCell<Self>>> {
+        if let Some(parent) = &self.parent {
+            // We have a parent, but do we have a grandparent?
+            if let Some(_) = parent.borrow().parent {
+                // Yes, we need to check if the grandparent is the topmost
+                parent.borrow().global()
+            } else {
+                Some(parent.clone())
+            }
+        } else {
+            None
         }
     }
 }
-

@@ -17,12 +17,6 @@ use crate::{
 
 use super::{environment::EnvironmentError, Environment};
 
-pub struct Interpreter<T: std::io::Write = std::io::Stdout> {
-    writer: T,
-    pub locals: HashMap<IdentifierKey, usize>,
-    environment: Rc<RefCell<Environment>>,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum InterpreterError {
     #[error("Return is used for flow control")]
@@ -51,6 +45,13 @@ impl From<LoxTypeError> for InterpreterError {
     }
 }
 
+pub struct Interpreter<T: std::io::Write = std::io::Stdout> {
+    writer: T,
+    pub locals: HashMap<IdentifierKey, usize>,
+    builtins: HashMap<String, LoxType>,
+    environment: Rc<RefCell<Environment>>,
+}
+
 impl<T: std::io::Write> From<T> for Interpreter<T> {
     fn from(value: T) -> Self {
         Self::new_from_writer(value)
@@ -67,10 +68,10 @@ impl Interpreter<std::io::Stdout> {
 
 impl<T: std::io::Write> Interpreter<T> {
     pub fn new_from_writer(writer: T) -> Self {
-        let environment = Environment::new();
-        environment.borrow_mut().create(
+        let mut builtins = HashMap::new();
+        builtins.insert(
             "clock".to_string(),
-            Some(LoxType::NativeFunction {
+            LoxType::NativeFunction {
                 name: "clock".to_string(),
                 arity: 0,
                 func: |_| {
@@ -80,15 +81,14 @@ impl<T: std::io::Write> Interpreter<T> {
                         .as_secs_f64()
                         .into()
                 },
-            }),
+            },
         );
-        let mut interpreter = Self {
+        Self {
             locals: HashMap::new(),
-            environment,
+            environment: Environment::new(),
+            builtins,
             writer,
-        };
-        interpreter.nest_environment();
-        interpreter
+        }
     }
 
     fn nest_environment(&mut self) {
@@ -110,7 +110,8 @@ impl<T: std::io::Write> Interpreter<T> {
     }
 
     pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
-        Resolver::new(self).resolve(stmts.to_vec());
+        // TODO: handle err
+        Resolver::new(self).resolve(stmts.to_vec()).unwrap();
         for stmt in stmts {
             // TODO: avoid clone
             self.visit_statement(stmt.clone())?;
@@ -274,7 +275,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     self.environment.borrow_mut().assign_at_distance(
                         identifier.clone(),
                         Some(value),
-                        self.locals.get(&ident.into()).map_or(None, |d| Some(*d)),
+                        self.locals.get(&ident.into()).map(|d| *d),
                     )?;
                 } else {
                     return Err(InterpreterError::Unexpected(format!(
@@ -349,21 +350,25 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 Ok(return_value)
             }
             Expression::Variable(ident) => {
-                match self
-                    .environment
-                    .borrow()
-                    .get_at_distance(
-                        &ident.to_string(),
-                        self.locals.get(&(&ident).into()).map_or(None, |d| Some(*d)),
-                    )
-                    .map_err(|e| InterpreterError::GenericError(e.to_string()))?
-                {
-                    Some(value) => Ok(value),
-                    None => {
-                        return Err(InterpreterError::UninitializedVariable(format!(
-                            "Uninitialized variable '{}'",
-                            ident
-                        )))
+                if let Some(builtin_fn) = self.builtins.get(&ident.to_string()) {
+                    Ok(builtin_fn.clone())
+                } else {
+                    match self
+                        .environment
+                        .borrow()
+                        .get_at_distance(
+                            &ident.to_string(),
+                            self.locals.get(&(&ident).into()).map(|d| *d),
+                        )
+                        .map_err(|e| InterpreterError::GenericError(e.to_string()))?
+                    {
+                        Some(value) => Ok(value),
+                        None => {
+                            return Err(InterpreterError::UninitializedVariable(format!(
+                                "Uninitialized variable '{}'",
+                                ident
+                            )))
+                        }
                     }
                 }
             }
