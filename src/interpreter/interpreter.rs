@@ -15,117 +15,7 @@ use crate::{
     visitor::Visitor,
 };
 
-#[derive(Debug)]
-pub struct Environment {
-    parent: Option<Rc<RefCell<Environment>>>,
-    values: HashMap<String, Option<LoxType>>,
-}
-
-struct EnvironmentError(String);
-impl std::fmt::Display for EnvironmentError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-macro_rules! environment_bail {
-    ($msg:expr) => {
-        return Err(EnvironmentError($msg.to_string()))
-    };
-}
-
-impl From<EnvironmentError> for InterpreterError {
-    fn from(value: EnvironmentError) -> Self {
-        Self::GenericError(value.0)
-    }
-}
-
-impl Environment {
-    fn new() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
-            parent: None,
-            values: HashMap::new(),
-        }))
-    }
-
-    fn get(&self, key: &str) -> Result<Option<LoxType>, EnvironmentError> {
-        match self.values.get(key) {
-            Some(value) => match value {
-                Some(value) => Ok(Some(value.clone())),
-                None => environment_bail!(format!("Uninitialized variable '{}'.", key)),
-            },
-            None => match &self.parent {
-                Some(parent) => parent.borrow().get(key),
-                None => environment_bail!(format!("Undefined variable '{}'.", key)),
-            },
-        }
-    }
-
-    fn ancestor(&self, distance: usize) -> Result<Rc<RefCell<Self>>, EnvironmentError> {
-        if distance > 1 {
-            if let Some(parent) = &self.parent {
-                parent.borrow().ancestor(distance - 1)
-            } else {
-                environment_bail!("No parent.")
-            }
-        } else {
-            self.parent
-                .as_ref()
-                .map(|e| e.clone())
-                .ok_or_else(|| EnvironmentError("No parent.".to_string()))
-        }
-    }
-
-    fn get_at_distance(
-        &self,
-        key: &str,
-        distance: Option<usize>,
-    ) -> Result<Option<LoxType>, EnvironmentError> {
-        if let Some(distance) = distance {
-            if distance <= 1 {
-                self.get(key)
-            } else {
-                self.ancestor(distance - 1)?.borrow().get(key)
-            }
-        } else {
-            self.get(key)
-        }
-    }
-
-    fn create(&mut self, key: String, value: Option<LoxType>) {
-        self.values.insert(key, value);
-    }
-
-    fn assign(&mut self, key: String, value: Option<LoxType>) -> Result<(), EnvironmentError> {
-        if self.values.contains_key(&key) {
-            self.values.insert(key, value);
-            Ok(())
-        } else {
-            match &self.parent {
-                Some(parent) => parent.borrow_mut().assign(key, value),
-
-                None => environment_bail!("Undefined variable '{key}'."),
-            }
-        }
-    }
-
-    fn assign_at_distance(
-        &mut self,
-        key: String,
-        value: Option<LoxType>,
-        distance: Option<usize>,
-    ) -> Result<(), EnvironmentError> {
-        if let Some(distance) = distance {
-            if distance == 1 {
-                self.assign(key, value)
-            } else {
-                self.ancestor(distance - 1)?.borrow_mut().assign(key, value)
-            }
-        } else {
-            self.assign(key, value)
-        }
-    }
-}
+use super::{environment::EnvironmentError, Environment};
 
 pub struct Interpreter<T: std::io::Write = std::io::Stdout> {
     writer: T,
@@ -133,7 +23,7 @@ pub struct Interpreter<T: std::io::Write = std::io::Stdout> {
     environment: Rc<RefCell<Environment>>,
 }
 
-#[derive(Default, Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum InterpreterError {
     #[error("Return is used for flow control")]
     Return(LoxType),
@@ -141,17 +31,18 @@ pub enum InterpreterError {
     Unexpected(String),
     #[error("Uninitialized variable")]
     UninitializedVariable(String),
+    #[error("Invalid unary opator")]
+    InvalidUnaryOperator,
+    #[error("Invalid binary opator")]
+    InvalidBinaryOperator,
     #[error("Generic error")]
     GenericError(String),
-    #[error("Default")]
-    #[default]
-    Default,
 }
 
-macro_rules! generic_bail {
-    ($msg:expr) => {
-        return Err(InterpreterError::GenericError($msg))
-    };
+impl From<EnvironmentError> for InterpreterError {
+    fn from(value: EnvironmentError) -> Self {
+        Self::GenericError(value.0)
+    }
 }
 
 impl From<LoxTypeError> for InterpreterError {
@@ -171,6 +62,60 @@ type InterpreterResult<T> = Result<T, InterpreterError>;
 impl Interpreter<std::io::Stdout> {
     pub fn new() -> Self {
         std::io::stdout().into()
+    }
+}
+
+impl<T: std::io::Write> Interpreter<T> {
+    pub fn new_from_writer(writer: T) -> Self {
+        let environment = Environment::new();
+        environment.borrow_mut().create(
+            "clock".to_string(),
+            Some(LoxType::NativeFunction {
+                name: "clock".to_string(),
+                arity: 0,
+                func: |_| {
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs_f64()
+                        .into()
+                },
+            }),
+        );
+        let mut interpreter = Self {
+            locals: HashMap::new(),
+            environment,
+            writer,
+        };
+        interpreter.nest_environment();
+        interpreter
+    }
+
+    fn nest_environment(&mut self) {
+        let child_environment = Environment::new();
+        child_environment.borrow_mut().parent = Some(self.environment.clone());
+        self.environment = child_environment
+    }
+
+    fn unnest_environment(&mut self) {
+        if let Some(parent_environment) = &self.environment.clone().borrow().parent {
+            self.environment = parent_environment.clone();
+        } else {
+            panic!("No parent environment to unnest to.")
+        }
+    }
+
+    pub fn resolve(&mut self, ident: Identifier, distance: usize) {
+        self.locals.insert(ident.into(), distance);
+    }
+
+    pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
+        Resolver::new(self).resolve(stmts.to_vec());
+        for stmt in stmts {
+            // TODO: avoid clone
+            self.visit_statement(stmt.clone())?;
+        }
+        Ok(())
     }
 }
 
@@ -269,9 +214,13 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     TokenType::Bang => LoxType::Boolean(!right.is_truthy()),
                     TokenType::Minus => match right {
                         LoxType::Number(n) => LoxType::Number(-n),
-                        _ => generic_bail!("Operand must be a number.".to_string()),
+                        _ => {
+                            return Err(InterpreterError::Unexpected(
+                                "Operand must be a number.".to_string(),
+                            ))
+                        }
                     },
-                    _ => generic_bail!("Invalid unary operator".to_string()),
+                    _ => return Err(InterpreterError::InvalidUnaryOperator),
                 })
             }
             Expression::Binary(left_expr, op, right_expr) => {
@@ -289,7 +238,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     TokenType::LessEqual => left.lte(&right)?.into(),
                     TokenType::BangEqual => left.neq(&right)?.into(),
                     TokenType::EqualEqual => left.eq(&right)?.into(),
-                    _ => generic_bail!("Invalid binary operator.".to_string()),
+                    _ => return Err(InterpreterError::InvalidBinaryOperator),
                 })
             }
             Expression::Logical(left_expr, op, right_expr) => {
@@ -307,7 +256,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     TokenType::LessEqual => left.lte(&right)?.into(),
                     TokenType::BangEqual => left.neq(&right)?.into(),
                     TokenType::EqualEqual => left.eq(&right)?.into(),
-                    _ => generic_bail!("Invalid binary operator.".to_string()),
+                    _ => return Err(InterpreterError::InvalidBinaryOperator),
                 })
             }
             Expression::Grouping(expr) => self.visit_expression(*expr),
@@ -328,7 +277,10 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         self.locals.get(&ident.into()).map_or(None, |d| Some(*d)),
                     )?;
                 } else {
-                    generic_bail!(format!("Expected identifier, got {:?}", ident));
+                    return Err(InterpreterError::Unexpected(format!(
+                        "Expected identifier, got {:?}",
+                        ident
+                    )));
                 }
                 Ok(LoxType::default())
             }
@@ -339,12 +291,12 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 let return_value = match function {
                     LoxType::NativeFunction { name, arity, func } => {
                         if arity != args.len() {
-                            generic_bail!(format!(
+                            return Err(InterpreterError::Unexpected(format!(
                                 "Expected {} arguments for {} but got {}.",
                                 arity,
                                 name,
                                 args.len()
-                            ))
+                            )));
                         }
                         let argument_values: InterpreterResult<Vec<LoxType>> =
                             args.into_iter().map(|a| self.visit_expression(a)).collect();
@@ -355,12 +307,12 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         self.environment = environment;
                         let return_value = if let Statement::Function(_, identifiers, body) = func {
                             if args.len() != identifiers.len() {
-                                generic_bail!(format!(
+                                return Err(InterpreterError::Unexpected(format!(
                                     "Expected {} arguments but got {}. {}",
                                     identifiers.len(),
                                     args.len(),
                                     expr
-                                ))
+                                )));
                             }
                             for (arg, id) in args.into_iter().zip(identifiers.iter()) {
                                 let arg_value = self.visit_expression(arg)?;
@@ -373,21 +325,25 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                                         .borrow_mut()
                                         .create(identifier.to_string(), Some(arg_value));
                                 } else {
-                                    generic_bail!(
-                                        "Identifier didnt contain correct TokenType.".to_string()
-                                    )
+                                    return Err(InterpreterError::Unexpected(
+                                        "Identifier didnt contain correct TokenType.".to_string(),
+                                    ));
                                 }
                             }
                             self.visit_statement(*body)?
                         } else {
-                            generic_bail!(
-                        format!("Expected statement in LoxType::Function to be of type Function, got {func:?}")
-                    )
+                            return Err(InterpreterError::Unexpected(
+                                    format!("Expected statement in LoxType::Function to be of type Function, got {func:?}")
+                                    ));
                         };
                         self.environment = old_environment;
                         return_value
                     }
-                    _ => generic_bail!("Expected call on function.".to_string()),
+                    _ => {
+                        return Err(InterpreterError::Unexpected(
+                            "Expected call on function.".to_string(),
+                        ))
+                    }
                 };
                 self.unnest_environment();
                 Ok(return_value)
@@ -412,60 +368,6 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 }
             }
         }
-    }
-}
-
-impl<T: std::io::Write> Interpreter<T> {
-    pub fn new_from_writer(writer: T) -> Self {
-        let environment = Environment::new();
-        environment.borrow_mut().create(
-            "clock".to_string(),
-            Some(LoxType::NativeFunction {
-                name: "clock".to_string(),
-                arity: 0,
-                func: |_| {
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs_f64()
-                        .into()
-                },
-            }),
-        );
-        let mut interpreter = Self {
-            locals: HashMap::new(),
-            environment,
-            writer,
-        };
-        interpreter.nest_environment();
-        interpreter
-    }
-
-    fn nest_environment(&mut self) {
-        let child_environment = Environment::new();
-        child_environment.borrow_mut().parent = Some(self.environment.clone());
-        self.environment = child_environment
-    }
-
-    fn unnest_environment(&mut self) {
-        if let Some(parent_environment) = &self.environment.clone().borrow().parent {
-            self.environment = parent_environment.clone();
-        } else {
-            panic!("No parent environment to unnest to.")
-        }
-    }
-
-    pub fn resolve(&mut self, ident: Identifier, distance: usize) {
-        self.locals.insert(ident.into(), distance);
-    }
-
-    pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
-        Resolver::new(self).resolve(stmts.to_vec());
-        for stmt in stmts {
-            // TODO: avoid clone
-            self.visit_statement(stmt.clone())?;
-        }
-        Ok(())
     }
 }
 

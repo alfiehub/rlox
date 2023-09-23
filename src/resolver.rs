@@ -47,7 +47,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         }
     }
 
-    fn resolve_function(&mut self, fun: Statement) -> Result<(), String> {
+    fn resolve_function(&mut self, fun: Statement) -> Result<(), ResolverError> {
         self.begin_scope();
         if let Statement::Function(_, args, body) = fun {
             for arg in args.into_iter() {
@@ -67,9 +67,15 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+enum ResolverError {
+    #[error("Can't read local variable in its own initializer.")]
+    SelfInitialize
+}
+
 #[allow(unused_variables)]
-impl<T: std::io::Write> Visitor<Result<(), String>> for Resolver<'_, T> {
-    fn visit_statement(&mut self, stmt: Statement) -> Result<(), String> {
+impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
+    fn visit_statement(&mut self, stmt: Statement) -> Result<(), ResolverError> {
         // TODO: avoid clone
         match stmt.clone() {
             Statement::Block(stmts) => {
@@ -113,7 +119,7 @@ impl<T: std::io::Write> Visitor<Result<(), String>> for Resolver<'_, T> {
         Ok(())
     }
 
-    fn visit_expression(&mut self, expr: Expression) -> Result<(), String> {
+    fn visit_expression(&mut self, expr: Expression) -> Result<(), ResolverError> {
         match &expr {
             Expression::Assign(ident, init) => {
                 self.visit_expression(*init.clone())?;
@@ -137,7 +143,7 @@ impl<T: std::io::Write> Visitor<Result<(), String>> for Resolver<'_, T> {
                 if let Some(current_scope) = self.scopes.last() {
                     if let Some(initialized) = current_scope.get(&ident.to_string()) {
                         if !initialized {
-                            return Err("Can't read local variable in its own initializer.".to_string())
+                            return Err(ResolverError::SelfInitialize)
                         }
                     }
                 }
