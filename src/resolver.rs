@@ -6,9 +6,16 @@ use crate::{
     visitor::Visitor,
 };
 
+#[derive(Eq, PartialEq)]
+enum FunctionType {
+    Function,
+    None,
+}
+
 pub struct Resolver<'a, T: std::io::Write> {
     interpreter: &'a mut Interpreter<T>,
     scopes: Vec<HashMap<String, bool>>,
+    current_function: FunctionType,
 }
 
 impl<'a, T: std::io::Write> Resolver<'a, T> {
@@ -16,6 +23,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         Self {
             scopes: vec![],
             interpreter,
+            current_function: FunctionType::None,
         }
     }
     fn begin_scope(&mut self) {
@@ -51,7 +59,14 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         }
     }
 
-    fn resolve_function(&mut self, fun: Statement) -> Result<(), ResolverError> {
+    fn resolve_function(
+        &mut self,
+        fun: Statement,
+        kind: FunctionType,
+    ) -> Result<(), ResolverError> {
+        let mut enclosing_function = kind;
+
+        std::mem::swap(&mut self.current_function, &mut enclosing_function);
         self.begin_scope();
         if let Statement::Function(_, args, body) = fun {
             for arg in args.into_iter() {
@@ -61,6 +76,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
             self.visit_statement(*body)?;
         }
         self.end_scope();
+        self.current_function = enclosing_function;
         Ok(())
     }
 
@@ -78,6 +94,8 @@ pub enum ResolverError {
     SelfInitialize,
     #[error("Already a variable with this name in this scope.")]
     Redeclaration,
+    #[error("Can't return from top-level code.")]
+    TopLevelReturn,
 }
 
 #[allow(unused_variables)]
@@ -102,7 +120,7 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
             Statement::Function(ident, _, body) => {
                 self.declare(ident.clone())?;
                 self.define(ident.clone());
-                self.resolve_function(stmt)?;
+                self.resolve_function(stmt, FunctionType::Function)?;
             }
             Statement::Expression(expr) => {
                 self.visit_expression(expr)?;
@@ -122,6 +140,9 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 self.visit_statement(*body)?;
             }
             Statement::Return(Some(expr)) => {
+                if self.current_function == FunctionType::None {
+                    return Err(ResolverError::TopLevelReturn);
+                }
                 self.visit_expression(expr)?;
             }
             _ => {}
@@ -229,7 +250,10 @@ mod tests {
         );
         let mut interpreter = Interpreter::new();
         let mut resolver = Resolver::new(&mut interpreter);
-        assert!(resolver.resolve(program).is_ok(), "Global redeclartions are allowed.");
+        assert!(
+            resolver.resolve(program).is_ok(),
+            "Global redeclartions are allowed."
+        );
     }
 
     #[test]
@@ -246,5 +270,18 @@ mod tests {
         let mut resolver = Resolver::new(&mut interpreter);
         let error = resolver.resolve(program).unwrap_err();
         assert_eq!(error, ResolverError::Redeclaration)
+    }
+
+    #[test]
+    fn test_top_level_return() {
+        let program = parse!(
+            "
+            return 69;
+            "
+        );
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        let error = resolver.resolve(program).unwrap_err();
+        assert_eq!(error, ResolverError::TopLevelReturn)
     }
 }
