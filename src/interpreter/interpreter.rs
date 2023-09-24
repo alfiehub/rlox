@@ -204,6 +204,15 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 }
                 Ok(LoxType::Nil)
             }
+            Statement::Class(ident, _) => {
+                self.environment.borrow_mut().create(
+                    ident.to_string(),
+                    Some(LoxType::Class {
+                        name: ident.to_string(),
+                    }),
+                );
+                Ok(LoxType::Nil)
+            }
         }
     }
 
@@ -547,6 +556,28 @@ mod tests {
         assert_eq!(
             String::from_utf8(output).unwrap(),
             "global\nglobal\nblock\n".to_string()
+        );
+    }
+
+    #[test]
+    fn test_class() {
+        let program = parse!(
+            "
+            class MyFancyClass {
+                fancyMethod() {
+                    return 123;
+                }
+            }
+            print MyFancyClass;
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output)
+            .interpret(&program)
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "MyFancyClass\n".to_string()
         );
     }
 }

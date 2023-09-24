@@ -1,0 +1,6 @@
+class EmptyClass {}
+class MyClass {
+  someMethod() {
+    print "hello world";
+  }
+}

@@ -145,6 +145,10 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 }
                 self.visit_expression(expr)?;
             }
+            Statement::Class(ident, _) => {
+                self.declare(ident.clone())?;
+                self.define(ident);
+            }
             _ => {}
         };
         Ok(())

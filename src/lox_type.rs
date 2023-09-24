@@ -15,6 +15,9 @@ pub enum LoxType {
         arity: usize,
         func: fn(Vec<LoxType>) -> LoxType,
     },
+    Class {
+        name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -130,10 +133,11 @@ impl std::ops::Div for LoxType {
 impl Display for LoxType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LoxType::Number(n) => write!(f, "{}", n),
-            LoxType::String(s) => write!(f, "{}", s),
-            LoxType::Boolean(b) => write!(f, "{}", b),
+            LoxType::Number(n) => write!(f, "{n}"),
+            LoxType::String(s) => write!(f, "{s}"),
+            LoxType::Boolean(b) => write!(f, "{b}"),
             LoxType::Nil => write!(f, "nil"),
+            LoxType::Class { name, .. } => write!(f, "{name}"),
             _ => todo!("Not implemented"),
         }
     }

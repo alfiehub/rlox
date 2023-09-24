@@ -136,6 +136,23 @@ impl Visitor<String> for Printer {
                     format!("var {ident};")
                 }
             }
+            Statement::Class(ident, methods) => {
+                self.depth += 1;
+                let output = format!(
+                    "class {ident} {{{}{}",
+                    methods
+                        .into_iter()
+                        .map(|d| padded_format!(
+                            self.depth,
+                            "{}",
+                            &self.visit_statement(d)[4..] // hacky way to remove "fun "
+                        ))
+                        .collect::<String>(),
+                    padded_format!(self.depth - 1, "}}")
+                );
+                self.depth -= 1;
+                output
+            }
         }
     }
 }
@@ -184,4 +201,5 @@ fun a() {
     test_file!(test_redeclare, "redeclare");
     test_file!(test_block_scope, "block_scope");
     test_file!(test_functions, "functions");
+    test_file!(test_class, "class");
 }

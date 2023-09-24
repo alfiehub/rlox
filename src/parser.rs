@@ -205,9 +205,7 @@ impl Parser {
 
     fn equality(&mut self) -> Result<Expression> {
         let mut expr = self.comparison()?;
-        while let TokenType::BangEqual | TokenType::EqualEqual =
-            self.peek().token_type
-        {
+        while let TokenType::BangEqual | TokenType::EqualEqual = self.peek().token_type {
             self.advance();
             let operator = self.previous();
             let right = self.comparison()?;
@@ -320,6 +318,31 @@ impl Parser {
         Ok(identifier)
     }
 
+    fn function(&mut self) -> Result<Statement> {
+        let identifier = match self.peek().token_type {
+            TokenType::Identifier(_) => self.peek(),
+            _ => bail!("Expected identfier after fun."),
+        };
+        self.advance();
+
+        self.consume(
+            TokenType::LeftParen,
+            "Expected '(' after function identifier",
+        )?;
+        let parameters = self.parameters()?;
+        self.consume(
+            TokenType::RightParen,
+            "Expected ')' after function parameters",
+        )?;
+
+        let body = self.statement()?;
+        Ok(Statement::Function(
+            Identifier(identifier),
+            parameters,
+            body.into(),
+        ))
+    }
+
     fn parameters(&mut self) -> Result<Vec<Identifier>> {
         let mut identifiers = vec![];
         if let Ok(first_parameter) = self.identifier() {
@@ -355,28 +378,35 @@ impl Parser {
             Statement::Variable(Identifier(identifier), expr)
         } else if self.peek().token_type == TokenType::Fun {
             self.advance();
+            self.function()?
+        } else if self.peek().token_type == TokenType::Class {
+            self.advance();
             let identifier = match self.peek().token_type {
                 TokenType::Identifier(_) => self.peek(),
-                _ => bail!("Expected identfier after var."),
+                _ => bail!("Expected identfier after class."),
             };
             self.advance();
 
             self.consume(
-                TokenType::LeftParen,
-                "Expected '(' after function identifier",
-            )?;
-            let parameters = self.parameters()?;
-            self.consume(
-                TokenType::RightParen,
-                "Expected ')' after function parameters",
+                TokenType::LeftBrace,
+                "Expected '{' after function identifier",
             )?;
 
-            let body = self.statement()?;
-            Statement::Function(
-                Identifier(identifier),
-                parameters,
-                body.into(),
-            )
+            let mut methods = vec![];
+            while let Ok(fun) = self.function() {
+                methods.push(fun);
+                if self.is_at_end() {
+                    break;
+                }
+                if self.peek().token_type == TokenType::RightBrace {
+                    break;
+                }
+            }
+            self.consume(
+                TokenType::RightBrace,
+                "Expected '}' after function identifier",
+            )?;
+            Statement::Class(Identifier(identifier), methods)
         } else {
             self.statement()?
         };
@@ -516,5 +546,20 @@ mod tests {
         } else {
             panic!()
         }
+    }
+
+    #[test]
+    fn test_class() {
+        let program = "
+            class EmptyClass {}
+            class MyClass {
+                classMethod() {
+                    print 1;
+                }
+            }
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        parser.parse().expect("Should be able to parse");
     }
 }

@@ -59,6 +59,7 @@ pub enum Expression {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Block(Vec<Statement>),
+    Class(Identifier, Vec<Statement>),
     Expression(Expression),
     Function(Identifier, Vec<Identifier>, Box<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
