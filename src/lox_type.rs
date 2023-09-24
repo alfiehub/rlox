@@ -17,6 +17,10 @@ pub enum LoxType {
     },
     Class {
         name: String,
+        arity: usize,
+    },
+    ClassInstance {
+        class: Box<LoxType>,
     },
 }
 
@@ -138,6 +142,7 @@ impl Display for LoxType {
             LoxType::Boolean(b) => write!(f, "{b}"),
             LoxType::Nil => write!(f, "nil"),
             LoxType::Class { name, .. } => write!(f, "{name}"),
+            LoxType::ClassInstance { class } => write!(f, "{class} instance"),
             _ => todo!("Not implemented"),
         }
     }

@@ -209,6 +209,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     ident.to_string(),
                     Some(LoxType::Class {
                         name: ident.to_string(),
+                        arity: 0,
                     }),
                 );
                 Ok(LoxType::Nil)
@@ -349,6 +350,9 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         self.environment = old_environment;
                         return_value
                     }
+                    LoxType::Class { .. } => LoxType::ClassInstance {
+                        class: function.into()
+                    },
                     _ => {
                         return Err(InterpreterError::Unexpected(
                             "Expected call on function.".to_string(),
@@ -560,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn test_class() {
+    fn test_class_print() {
         let program = parse!(
             "
             class MyFancyClass {
@@ -579,5 +583,25 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "MyFancyClass\n".to_string()
         );
+    }
+
+    #[test]
+    fn test_class_creation() {
+        let program = parse!(
+            "
+            class MyFancyClass {
+                fancyMethod() {
+                    return 123;
+                }
+            }
+            var fancyInstance = MyFancyClass();
+            print fancyInstance;
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output)
+            .interpret(&program)
+            .unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "MyFancyClass instance\n".to_string());
     }
 }
