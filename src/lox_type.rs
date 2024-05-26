@@ -25,6 +25,7 @@ pub enum LoxType {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub func: Statement,
+    pub arity: usize,
     pub environment: Rc<RefCell<Environment>>,
 }
 
@@ -32,12 +33,18 @@ pub struct Function {
 pub struct Class {
     pub name: String,
     pub arity: usize,
-    pub methods: Rc<RefCell<Environment>>,
+    pub methods: Rc<RefCell<HashMap<String, Function>>>,
+}
+
+impl std::fmt::Display for Class {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ClassInstance {
-    pub class: Box<LoxType>,
+    pub class: Class,
     pub properties: Rc<RefCell<HashMap<String, LoxType>>>,
 }
 
@@ -117,13 +124,10 @@ impl LoxType {
             _ => lox_type_bail!("<= only defined for Number."),
         }
     }
-
-    pub fn get_method(&self, ident: String) -> Option<Self> {
-        if let LoxType::Class(Class { methods, .. }) = self {
-            methods.borrow().get(&ident).ok().flatten()
-        } else {
-            None
-        }
+}
+impl Class {
+    pub fn get_method(&self, ident: String) -> Option<Function> {
+        self.methods.borrow().get(&ident).cloned()
     }
 }
 

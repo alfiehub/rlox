@@ -207,13 +207,17 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 self.visit_expression(*f.clone())?;
             }
             Expression::Get(expr, _) => self.visit_expression(*expr.clone())?,
+            Expression::Set(expr_object, _, expr) => {
+                self.visit_expression(*expr_object.clone())?;
+                self.visit_expression(*expr.clone())?;
+            }
             Expression::This(ident) => {
                 if self.current_class != ClassType::Class {
                     return Err(ResolverError::ThisOutsideClass);
                 }
                 self.resolve_local(ident.clone());
             }
-            _ => {}
+            Expression::Literal(_) => {}
         };
         Ok(())
     }

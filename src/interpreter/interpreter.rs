@@ -130,6 +130,52 @@ impl<T: std::io::Write> Interpreter<T> {
         }
         Ok(())
     }
+
+    fn call_function(
+        &mut self,
+        func: Function,
+        args: Vec<Expression>,
+    ) -> InterpreterResult<LoxType> {
+        let Function {
+            func,
+            environment,
+            arity,
+        } = func;
+        let old_environment = self.environment.clone();
+        self.environment = environment;
+        let return_value = if let Statement::Function(_, identifiers, body) = func {
+            if arity != args.len() {
+                return Err(InterpreterError::Unexpected(format!(
+                    "Expected {} arguments but got {}.",
+                    arity,
+                    args.len(),
+                )));
+            }
+            for (arg, id) in args.into_iter().zip(identifiers.iter()) {
+                let arg_value = self.visit_expression(arg)?;
+                if let Token {
+                    token_type: TokenType::Identifier(identifier),
+                    ..
+                } = &id.0
+                {
+                    self.environment
+                        .borrow_mut()
+                        .create(identifier.to_string(), Some(arg_value));
+                } else {
+                    return Err(InterpreterError::Unexpected(
+                        "Identifier didnt contain correct TokenType.".to_string(),
+                    ));
+                }
+            }
+            self.visit_statement(*body)?
+        } else {
+            return Err(InterpreterError::Unexpected(format!(
+                "Expected statement in LoxType::Function to be of type Function, got {func:?}"
+            )));
+        };
+        self.environment = old_environment;
+        Ok(return_value)
+    }
 }
 
 impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpreter<T> {
@@ -184,6 +230,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     self.environment.borrow_mut().create(
                         identifier.clone(),
                         Some(LoxType::Function(Function {
+                            arity: arg_idents.len(),
                             func: Statement::Function(ident, arg_idents, stmt),
                             environment: self.environment.clone(),
                         })),
@@ -216,7 +263,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 Ok(LoxType::Nil)
             }
             Statement::Class(ident, methods) => {
-                let methods: Environment = methods
+                let methods = methods
                     .into_iter()
                     .map(|method| {
                         let Statement::Function(ident, arg_idents, stmt) = method else {
@@ -226,20 +273,21 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         };
                         Ok((
                             ident.to_string(),
-                            Some(LoxType::Function(Function {
+                            Function {
+                                arity: arg_idents.len(),
                                 func: Statement::Function(ident, arg_idents, stmt),
                                 environment: self.environment.clone(),
-                            })),
+                            },
                         ))
                     })
-                    .collect::<InterpreterResult<HashMap<String, Option<LoxType>>>>()?
-                    .into();
+                    .collect::<InterpreterResult<HashMap<String, Function>>>()?;
+                let arity = methods.get("init").map(|f| f.arity).unwrap_or_default();
                 self.environment.borrow_mut().create(
                     ident.to_string(),
                     Some(LoxType::Class(Class {
                         name: ident.to_string(),
-                        arity: 0,
-                        methods: methods.into(),
+                        arity,
+                        methods: Rc::new(RefCell::new(methods)),
                     })),
                 );
                 Ok(LoxType::Nil)
@@ -347,47 +395,18 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                             args.into_iter().map(|a| self.visit_expression(a)).collect();
                         func(argument_values?)
                     }
-                    LoxType::Function(Function { func, environment }) => {
-                        let old_environment = self.environment.clone();
-                        self.environment = environment;
-                        let return_value = if let Statement::Function(_, identifiers, body) = func {
-                            if args.len() != identifiers.len() {
-                                return Err(InterpreterError::Unexpected(format!(
-                                    "Expected {} arguments but got {}. {}",
-                                    identifiers.len(),
-                                    args.len(),
-                                    expr
-                                )));
-                            }
-                            for (arg, id) in args.into_iter().zip(identifiers.iter()) {
-                                let arg_value = self.visit_expression(arg)?;
-                                if let Token {
-                                    token_type: TokenType::Identifier(identifier),
-                                    ..
-                                } = &id.0
-                                {
-                                    self.environment
-                                        .borrow_mut()
-                                        .create(identifier.to_string(), Some(arg_value));
-                                } else {
-                                    return Err(InterpreterError::Unexpected(
-                                        "Identifier didnt contain correct TokenType.".to_string(),
-                                    ));
-                                }
-                            }
-                            self.visit_statement(*body)?
-                        } else {
-                            return Err(InterpreterError::Unexpected(
-                                    format!("Expected statement in LoxType::Function to be of type Function, got {func:?}")
-                                    ));
+                    LoxType::Function(func) => self.call_function(func, args)?,
+                    LoxType::Class(class) => {
+                        let init_option = class.get_method("init".to_string());
+                        let instance = ClassInstance {
+                            class,
+                            properties: Rc::new(RefCell::new(HashMap::new())),
                         };
-                        self.environment = old_environment;
-                        return_value
+                        if let Some(init) = init_option {
+                            self.call_function(init.bind(instance.clone()), args)?;
+                        }
+                        instance.into()
                     }
-                    LoxType::Class { .. } => LoxType::ClassInstance(ClassInstance {
-                        class: function.into(),
-                        properties: Rc::new(RefCell::new(HashMap::new())),
-                    }),
                     _ => {
                         return Err(InterpreterError::Unexpected(
                             "Expected call on function.".to_string(),
@@ -420,13 +439,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         let class_name = class.to_string();
                         class
                             .get_method(ident.to_string())
-                            .and_then(|method| {
-                                if let LoxType::Function(method) = method {
-                                    Some(method.bind(instance).into())
-                                } else {
-                                    None
-                                }
-                            })
+                            .map(|method| method.bind(instance).into())
                             .ok_or(InterpreterError::GenericError(format!(
                                 "Undefined property '{ident}' on {class_name} instance."
                             )))
@@ -698,6 +711,32 @@ mod tests {
         assert_eq!(
             String::from_utf8(output).unwrap(),
             "The German chocolate cake is delicious!\n".to_string()
+        );
+    }
+
+    #[test]
+    fn test_class_init() {
+        let program = parse!(
+            "
+            class Hello {
+              init() {
+                print this;
+                print \"Hello from init!\";
+                this.message = \"Assignment in init!\";
+              }
+            }
+
+            var hello = Hello();
+            print hello.message;
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output)
+            .interpret(&program)
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Hello instance\nHello from init!\nAssignment in init!\n".to_string()
         );
     }
 }

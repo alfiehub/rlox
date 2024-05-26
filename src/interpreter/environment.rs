@@ -89,7 +89,7 @@ impl Environment {
             match &self.parent {
                 Some(parent) => parent.borrow_mut().assign(key, value),
 
-                None => environment_bail!("Undefined variable '{key}'."),
+                None => environment_bail!("Undefined variable '{key}' while assigning {value:?}."),
             }
         }
     }

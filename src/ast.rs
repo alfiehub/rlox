@@ -130,6 +130,7 @@ impl Display for Expression {
                 Expression::Literal(literal) => literal.0.token_type.to_string(),
                 Expression::Assign(identifier, expression) =>
                     parenthesize(&identifier.0.token_type.to_string(), &[expression]),
+                Expression::This(ident) => ident.to_string(),
                 _ => todo!("Not implemented"),
             }
         )
