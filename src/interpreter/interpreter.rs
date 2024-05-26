@@ -9,13 +9,13 @@ use anyhow::Result;
 
 use crate::{
     ast::{Expression, Identifier, IdentifierKey, Statement},
-    lox_type::{LoxType, LoxTypeError},
+    lox_type::{Class, ClassInstance, Function, LoxType, LoxTypeError},
     resolver::Resolver,
     token::{Token, TokenType},
     visitor::Visitor,
 };
 
-use super::{environment::EnvironmentError, Environment};
+use super::{environment::EnvironmentError, Environment, Nesting};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InterpreterError {
@@ -92,21 +92,33 @@ impl<T: std::io::Write> Interpreter<T> {
     }
 
     fn nest_environment(&mut self) {
-        let child_environment = Environment::new();
-        child_environment.borrow_mut().parent = Some(self.environment.clone());
-        self.environment = child_environment
+        self.environment = self.environment.nest();
     }
 
     fn unnest_environment(&mut self) {
-        if let Some(parent_environment) = &self.environment.clone().borrow().parent {
-            self.environment = parent_environment.clone();
-        } else {
-            panic!("No parent environment to unnest to.")
-        }
+        self.environment = self.environment.unnest();
     }
 
     pub fn resolve(&mut self, ident: Identifier, distance: usize) {
         self.locals.insert(ident.into(), distance);
+    }
+
+    fn look_up_variable(&self, ident: Identifier) -> InterpreterResult<LoxType> {
+        match self
+            .environment
+            .borrow()
+            .get_at_distance(
+                &ident.to_string(),
+                self.locals.get(&(&ident).into()).copied(),
+            )
+            .map_err(|e| InterpreterError::GenericError(e.to_string()))?
+        {
+            Some(value) => Ok(value),
+            None => Err(InterpreterError::UninitializedVariable(format!(
+                "Uninitialized variable '{}'",
+                ident
+            ))),
+        }
     }
 
     pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
@@ -171,10 +183,10 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 if let TokenType::Identifier(identifier) = &ident.0.token_type {
                     self.environment.borrow_mut().create(
                         identifier.clone(),
-                        Some(LoxType::Function(
-                            Statement::Function(ident, arg_idents, stmt),
-                            self.environment.clone(),
-                        )),
+                        Some(LoxType::Function(Function {
+                            func: Statement::Function(ident, arg_idents, stmt),
+                            environment: self.environment.clone(),
+                        })),
                     );
                 }
                 Ok(LoxType::default())
@@ -214,21 +226,21 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         };
                         Ok((
                             ident.to_string(),
-                            Some(LoxType::Function(
-                                Statement::Function(ident, arg_idents, stmt),
-                                self.environment.clone(),
-                            )),
+                            Some(LoxType::Function(Function {
+                                func: Statement::Function(ident, arg_idents, stmt),
+                                environment: self.environment.clone(),
+                            })),
                         ))
                     })
                     .collect::<InterpreterResult<HashMap<String, Option<LoxType>>>>()?
                     .into();
                 self.environment.borrow_mut().create(
                     ident.to_string(),
-                    Some(LoxType::Class {
+                    Some(LoxType::Class(Class {
                         name: ident.to_string(),
                         arity: 0,
                         methods: methods.into(),
-                    }),
+                    })),
                 );
                 Ok(LoxType::Nil)
             }
@@ -335,7 +347,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                             args.into_iter().map(|a| self.visit_expression(a)).collect();
                         func(argument_values?)
                     }
-                    LoxType::Function(func, environment) => {
+                    LoxType::Function(Function { func, environment }) => {
                         let old_environment = self.environment.clone();
                         self.environment = environment;
                         let return_value = if let Statement::Function(_, identifiers, body) = func {
@@ -372,10 +384,10 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         self.environment = old_environment;
                         return_value
                     }
-                    LoxType::Class { .. } => LoxType::ClassInstance {
+                    LoxType::Class { .. } => LoxType::ClassInstance(ClassInstance {
                         class: function.into(),
                         properties: Rc::new(RefCell::new(HashMap::new())),
-                    },
+                    }),
                     _ => {
                         return Err(InterpreterError::Unexpected(
                             "Expected call on function.".to_string(),
@@ -389,37 +401,36 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 if let Some(builtin_fn) = self.builtins.get(&ident.to_string()) {
                     Ok(builtin_fn.clone())
                 } else {
-                    match self
-                        .environment
-                        .borrow()
-                        .get_at_distance(
-                            &ident.to_string(),
-                            self.locals.get(&(&ident).into()).copied(),
-                        )
-                        .map_err(|e| InterpreterError::GenericError(e.to_string()))?
-                    {
-                        Some(value) => Ok(value),
-                        None => Err(InterpreterError::UninitializedVariable(format!(
-                            "Uninitialized variable '{}'",
-                            ident
-                        ))),
-                    }
+                    self.look_up_variable(ident)
                 }
             }
             Expression::Get(expr, ident) => {
                 let object = self.visit_expression(*expr)?;
-                if let LoxType::ClassInstance {
-                    properties, class, ..
-                } = object
-                {
-                    properties
-                        .borrow()
-                        .get(&ident.to_string())
-                        .cloned()
-                        .or_else(|| class.get_method(ident.to_string()))
-                        .ok_or(InterpreterError::GenericError(format!(
-                            "No property '{ident}' on {class} instance."
-                        )))
+                if let LoxType::ClassInstance(instance) = object {
+                    let ClassInstance {
+                        ref properties,
+                        ref class,
+                        ..
+                    } = instance;
+                    let property = properties.borrow().get(&ident.to_string()).cloned();
+                    if let Some(property) = property {
+                        Ok(property)
+                    } else {
+                        // TODO: avoid this
+                        let class_name = class.to_string();
+                        class
+                            .get_method(ident.to_string())
+                            .and_then(|method| {
+                                if let LoxType::Function(method) = method {
+                                    Some(method.bind(instance).into())
+                                } else {
+                                    None
+                                }
+                            })
+                            .ok_or(InterpreterError::GenericError(format!(
+                                "Undefined property '{ident}' on {class_name} instance."
+                            )))
+                    }
                 } else {
                     Err(InterpreterError::GenericError(
                         "Only instances have properties.".to_string(),
@@ -428,7 +439,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
             }
             Expression::Set(expr, ident, value) => {
                 let object = self.visit_expression(*expr)?;
-                if let LoxType::ClassInstance { properties, .. } = object {
+                if let LoxType::ClassInstance(ClassInstance { properties, .. }) = object {
                     let value = self.visit_expression(*value)?;
                     properties.borrow_mut().insert(ident.to_string(), value);
                     Ok(LoxType::Nil)
@@ -438,6 +449,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     ))
                 }
             }
+            Expression::This(ident) => self.look_up_variable(ident),
         }
     }
 }
@@ -660,6 +672,32 @@ mod tests {
         assert_eq!(
             String::from_utf8(output).unwrap(),
             "Crunch crunch crunch!\n".to_string()
+        );
+    }
+
+    #[test]
+    fn test_class_this() {
+        let program = parse!(
+            "
+            class Cake {
+              taste() {
+                var adjective = \"delicious\";
+                print \"The \" + this.flavor + \" cake is \" + adjective + \"!\";
+              }
+            }
+
+            var cake = Cake();
+            cake.flavor = \"German chocolate\";
+            cake.taste(); // Prints \"The German chocolate cake is delicious!\".
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output)
+            .interpret(&program)
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "The German chocolate cake is delicious!\n".to_string()
         );
     }
 }

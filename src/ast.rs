@@ -57,6 +57,7 @@ pub enum Expression {
     Variable(Identifier),
     Get(Box<Expression>, Identifier),
     Set(Box<Expression>, Identifier, Box<Expression>),
+    This(Identifier),
 }
 
 #[derive(Debug, Clone)]

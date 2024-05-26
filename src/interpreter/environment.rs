@@ -131,6 +131,27 @@ impl Environment {
     }
 }
 
+pub trait Nesting {
+    fn nest(&self) -> Self;
+    fn unnest(&self) -> Self;
+}
+
+impl Nesting for Rc<RefCell<Environment>> {
+    fn nest(&self) -> Self {
+        let child_environment = Environment::new();
+        child_environment.borrow_mut().parent = Some(self.clone());
+        child_environment
+    }
+
+    fn unnest(&self) -> Self {
+        if let Some(parent_environment) = &self.borrow().parent {
+            parent_environment.clone()
+        } else {
+            panic!("No parent environment to unnest to.")
+        }
+    }
+}
+
 impl From<HashMap<String, Option<LoxType>>> for Environment {
     fn from(values: HashMap<String, Option<LoxType>>) -> Self {
         Self {

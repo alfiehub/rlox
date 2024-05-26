@@ -122,6 +122,10 @@ impl Parser {
                 self.advance();
                 Expression::Variable(Identifier(token))
             }
+            TokenType::This => {
+                self.advance();
+                Expression::This(Identifier(token))
+            }
             _ => {
                 bail!(
                     "Expected expression @ line: {}, found {:?}",
@@ -501,12 +505,16 @@ mod tests {
 
     #[test]
     fn test_expressions() {
-        let codes = ["1 + 2 * 3",
+        let codes = [
+            "1 + 2 * 3",
             "1 + 2 * 3 + 4",
-            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8"];
-        let results = ["(+ 1 (* 2 3))",
+            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8",
+        ];
+        let results = [
+            "(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
-            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)"];
+            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)",
+        ];
         for (code, result) in codes.iter().zip(results.iter()) {
             let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);
@@ -517,14 +525,18 @@ mod tests {
 
     #[test]
     fn test_statements() {
-        let codes = ["1 + 2 * 3;",
+        let codes = [
+            "1 + 2 * 3;",
             "1 + 2* 3 + 4;",
             "print 1 + 2 + 3 + 4;",
-            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;"];
-        let results = ["(+ 1 (* 2 3))",
+            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;",
+        ];
+        let results = [
+            "(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
             "(print (+ (+ (+ 1 2) 3) 4))",
-            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))"];
+            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))",
+        ];
         for (code, result) in codes.iter().zip(results.iter()) {
             let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);

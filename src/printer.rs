@@ -74,6 +74,7 @@ impl Visitor<String> for Printer {
                 self.visit_expression(*expr),
                 self.visit_expression(*value)
             ),
+            Expression::This(ident) => ident.to_string(),
         }
     }
 

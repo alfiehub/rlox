@@ -13,10 +13,17 @@ enum FunctionType {
     None,
 }
 
+#[derive(Eq, PartialEq)]
+enum ClassType {
+    Class,
+    None,
+}
+
 pub struct Resolver<'a, T: std::io::Write> {
     interpreter: &'a mut Interpreter<T>,
     scopes: Vec<HashMap<String, bool>>,
     current_function: FunctionType,
+    current_class: ClassType,
 }
 
 impl<'a, T: std::io::Write> Resolver<'a, T> {
@@ -25,6 +32,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
             scopes: vec![],
             interpreter,
             current_function: FunctionType::None,
+            current_class: ClassType::None,
         }
     }
     fn begin_scope(&mut self) {
@@ -35,7 +43,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, ident: Identifier) -> Result<(), ResolverError> {
+    fn declare(&mut self, ident: impl std::fmt::Display) -> Result<(), ResolverError> {
         if let Some(current_scope) = self.scopes.last_mut() {
             if current_scope.contains_key(&ident.to_string()) {
                 return Err(ResolverError::Redeclaration);
@@ -45,7 +53,7 @@ impl<'a, T: std::io::Write> Resolver<'a, T> {
         Ok(())
     }
 
-    fn define(&mut self, ident: Identifier) {
+    fn define(&mut self, ident: impl std::fmt::Display) {
         if let Some(current_scope) = self.scopes.last_mut() {
             current_scope.insert(ident.to_string(), true);
         }
@@ -97,6 +105,8 @@ pub enum ResolverError {
     Redeclaration,
     #[error("Can't return from top-level code.")]
     TopLevelReturn,
+    #[error("Can't use 'this' outside of a class.")]
+    ThisOutsideClass,
 }
 
 #[allow(unused_variables)]
@@ -147,11 +157,16 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 self.visit_expression(expr)?;
             }
             Statement::Class(ident, methods) => {
+                self.current_class = ClassType::Class;
                 self.declare(ident.clone())?;
                 self.define(ident);
+                self.begin_scope();
+                self.define("this");
                 for method in methods {
                     self.resolve_function(method, FunctionType::Method)?;
                 }
+                self.end_scope();
+                self.current_class = ClassType::None;
             }
             Statement::Return(_) => {}
         };
@@ -192,6 +207,12 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 self.visit_expression(*f.clone())?;
             }
             Expression::Get(expr, _) => self.visit_expression(*expr.clone())?,
+            Expression::This(ident) => {
+                if self.current_class != ClassType::Class {
+                    return Err(ResolverError::ThisOutsideClass);
+                }
+                self.resolve_local(ident.clone());
+            }
             _ => {}
         };
         Ok(())
@@ -292,5 +313,18 @@ mod tests {
         let mut resolver = Resolver::new(&mut interpreter);
         let error = resolver.resolve(program).unwrap_err();
         assert_eq!(error, ResolverError::TopLevelReturn)
+    }
+
+    #[test]
+    fn test_this_outside_class() {
+        let program = parse!(
+            "
+            print this;
+            "
+        );
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        let error = resolver.resolve(program).unwrap_err();
+        assert_eq!(error, ResolverError::ThisOutsideClass)
     }
 }

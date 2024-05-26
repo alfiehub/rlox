@@ -1,6 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
-use crate::{ast::Statement, interpreter::Environment};
+use crate::{
+    ast::Statement,
+    interpreter::{Environment, Nesting},
+};
 
 #[derive(Default, Debug, Clone)]
 pub enum LoxType {
@@ -9,22 +12,48 @@ pub enum LoxType {
     Boolean(bool),
     #[default]
     Nil,
-    Function(Statement, Rc<RefCell<Environment>>),
+    Function(Function),
     NativeFunction {
         name: String,
         arity: usize,
         func: fn(Vec<LoxType>) -> LoxType,
     },
-    Class {
-        name: String,
-        arity: usize,
-        methods: Rc<RefCell<Environment>>,
-    },
-    ClassInstance {
-        class: Box<LoxType>,
-        properties: Rc<RefCell<HashMap<String, LoxType>>>,
-    },
+    Class(Class),
+    ClassInstance(ClassInstance),
 }
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub func: Statement,
+    pub environment: Rc<RefCell<Environment>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Class {
+    pub name: String,
+    pub arity: usize,
+    pub methods: Rc<RefCell<Environment>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClassInstance {
+    pub class: Box<LoxType>,
+    pub properties: Rc<RefCell<HashMap<String, LoxType>>>,
+}
+
+macro_rules! from_for_loxtype {
+    ($ident:ident) => {
+        impl From<$ident> for LoxType {
+            fn from(value: $ident) -> Self {
+                LoxType::$ident(value)
+            }
+        }
+    };
+}
+
+from_for_loxtype!(Function);
+from_for_loxtype!(Class);
+from_for_loxtype!(ClassInstance);
 
 #[derive(Debug)]
 pub struct LoxTypeError(pub String);
@@ -90,11 +119,21 @@ impl LoxType {
     }
 
     pub fn get_method(&self, ident: String) -> Option<Self> {
-        if let LoxType::Class { methods, .. } = self {
+        if let LoxType::Class(Class { methods, .. }) = self {
             methods.borrow().get(&ident).ok().flatten()
         } else {
             None
         }
+    }
+}
+
+impl Function {
+    pub fn bind(mut self, instance: ClassInstance) -> Self {
+        self.environment = self.environment.nest();
+        self.environment
+            .borrow_mut()
+            .create("this".to_string(), Some(instance.into()));
+        self
     }
 }
 
@@ -150,8 +189,8 @@ impl Display for LoxType {
             LoxType::String(s) => write!(f, "{s}"),
             LoxType::Boolean(b) => write!(f, "{b}"),
             LoxType::Nil => write!(f, "nil"),
-            LoxType::Class { name, .. } => write!(f, "{name}"),
-            LoxType::ClassInstance { class, .. } => write!(f, "{class} instance"),
+            LoxType::Class(Class { name, .. }) => write!(f, "{name}"),
+            LoxType::ClassInstance(ClassInstance { class, .. }) => write!(f, "{class} instance"),
             _ => todo!("Not implemented"),
         }
     }
