@@ -203,12 +203,31 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 }
                 Ok(LoxType::Nil)
             }
-            Statement::Class(ident, _) => {
+            Statement::Class(ident, methods) => {
+                let methods: Environment = methods
+                    .into_iter()
+                    .map(|method| {
+                        let Statement::Function(ident, arg_idents, stmt) = method else {
+                            return Err(InterpreterError::Unexpected(format!(
+                                "Expected identifier, got {ident:?}"
+                            )));
+                        };
+                        Ok((
+                            ident.to_string(),
+                            Some(LoxType::Function(
+                                Statement::Function(ident, arg_idents, stmt),
+                                self.environment.clone(),
+                            )),
+                        ))
+                    })
+                    .collect::<InterpreterResult<HashMap<String, Option<LoxType>>>>()?
+                    .into();
                 self.environment.borrow_mut().create(
                     ident.to_string(),
                     Some(LoxType::Class {
                         name: ident.to_string(),
                         arity: 0,
+                        methods: methods.into(),
                     }),
                 );
                 Ok(LoxType::Nil)
@@ -393,11 +412,14 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     properties, class, ..
                 } = object
                 {
-                    properties.borrow().get(&ident.to_string()).cloned().ok_or(
-                        InterpreterError::GenericError(format!(
+                    properties
+                        .borrow()
+                        .get(&ident.to_string())
+                        .cloned()
+                        .or_else(|| class.get_method(ident.to_string()))
+                        .ok_or(InterpreterError::GenericError(format!(
                             "No property '{ident}' on {class} instance."
-                        )),
-                    )
+                        )))
                 } else {
                     Err(InterpreterError::GenericError(
                         "Only instances have properties.".to_string(),
@@ -615,6 +637,29 @@ mod tests {
         assert_eq!(
             String::from_utf8(output).unwrap(),
             "MyFancyClass\nMyFancyClass instance\n123\n".to_string()
+        );
+    }
+
+    #[test]
+    fn test_class_method() {
+        let program = parse!(
+            "
+            class Bacon {
+              eat() {
+                print \"Crunch crunch crunch!\";
+              }
+            }
+
+            Bacon().eat(); // Prints \"Crunch crunch crunch!\".
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output)
+            .interpret(&program)
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Crunch crunch crunch!\n".to_string()
         );
     }
 }

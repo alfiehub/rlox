@@ -130,3 +130,18 @@ impl Environment {
         }
     }
 }
+
+impl From<HashMap<String, Option<LoxType>>> for Environment {
+    fn from(values: HashMap<String, Option<LoxType>>) -> Self {
+        Self {
+            parent: None,
+            values,
+        }
+    }
+}
+
+impl From<Environment> for Rc<RefCell<Environment>> {
+    fn from(value: Environment) -> Self {
+        Rc::new(RefCell::new(value))
+    }
+}

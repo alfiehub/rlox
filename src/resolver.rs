@@ -9,6 +9,7 @@ use crate::{
 #[derive(Eq, PartialEq)]
 enum FunctionType {
     Function,
+    Method,
     None,
 }
 
@@ -145,11 +146,14 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 }
                 self.visit_expression(expr)?;
             }
-            Statement::Class(ident, _) => {
+            Statement::Class(ident, methods) => {
                 self.declare(ident.clone())?;
                 self.define(ident);
+                for method in methods {
+                    self.resolve_function(method, FunctionType::Method)?;
+                }
             }
-            _ => {}
+            Statement::Return(_) => {}
         };
         Ok(())
     }

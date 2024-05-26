@@ -18,6 +18,7 @@ pub enum LoxType {
     Class {
         name: String,
         arity: usize,
+        methods: Rc<RefCell<Environment>>,
     },
     ClassInstance {
         class: Box<LoxType>,
@@ -85,6 +86,14 @@ impl LoxType {
         match (self, other) {
             (LoxType::Number(l), LoxType::Number(r)) => Ok(l <= r),
             _ => lox_type_bail!("<= only defined for Number."),
+        }
+    }
+
+    pub fn get_method(&self, ident: String) -> Option<Self> {
+        if let LoxType::Class { methods, .. } = self {
+            methods.borrow().get(&ident).ok().flatten()
+        } else {
+            None
         }
     }
 }
