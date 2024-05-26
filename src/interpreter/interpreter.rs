@@ -351,7 +351,8 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         return_value
                     }
                     LoxType::Class { .. } => LoxType::ClassInstance {
-                        class: function.into()
+                        class: function.into(),
+                        properties: Rc::new(RefCell::new(HashMap::new())),
                     },
                     _ => {
                         return Err(InterpreterError::Unexpected(
@@ -383,6 +384,37 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                             )))
                         }
                     }
+                }
+            }
+            Expression::Get(expr, ident) => {
+                let object = self.visit_expression(*expr)?;
+                if let LoxType::ClassInstance {
+                    properties, class, ..
+                } = object
+                {
+                    properties
+                        .borrow()
+                        .get(&ident.to_string())
+                        .map(|v| v.clone())
+                        .ok_or(InterpreterError::GenericError(format!(
+                            "No property '{ident}' on {class} instance."
+                        )))
+                } else {
+                    return Err(InterpreterError::GenericError(
+                        "Only instances have properties.".to_string(),
+                    ));
+                }
+            }
+            Expression::Set(expr, ident, value) => {
+                let object = self.visit_expression(*expr)?;
+                if let LoxType::ClassInstance { properties, .. } = object {
+                    let value = self.visit_expression(*value)?;
+                    properties.borrow_mut().insert(ident.to_string(), value);
+                    Ok(LoxType::Nil)
+                } else {
+                    return Err(InterpreterError::GenericError(
+                        "Only instances have properties.".to_string(),
+                    ));
                 }
             }
         }
@@ -573,6 +605,10 @@ mod tests {
                 }
             }
             print MyFancyClass;
+            var fancyInstance = MyFancyClass();
+            print fancyInstance;
+            fancyInstance.prop = 123;
+            print fancyInstance.prop;
             "
         );
         let mut output = Vec::new();
@@ -581,27 +617,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            "MyFancyClass\n".to_string()
+            "MyFancyClass\nMyFancyClass instance\n123\n".to_string()
         );
-    }
-
-    #[test]
-    fn test_class_creation() {
-        let program = parse!(
-            "
-            class MyFancyClass {
-                fancyMethod() {
-                    return 123;
-                }
-            }
-            var fancyInstance = MyFancyClass();
-            print fancyInstance;
-            "
-        );
-        let mut output = Vec::new();
-        Interpreter::new_from_writer(&mut output)
-            .interpret(&program)
-            .unwrap();
-        assert_eq!(String::from_utf8(output).unwrap(), "MyFancyClass instance\n".to_string());
     }
 }

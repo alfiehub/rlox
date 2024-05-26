@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{ast::Statement, interpreter::Environment};
 
@@ -21,6 +21,7 @@ pub enum LoxType {
     },
     ClassInstance {
         class: Box<LoxType>,
+        properties: Rc<RefCell<HashMap<String, LoxType>>>,
     },
 }
 
@@ -142,7 +143,7 @@ impl Display for LoxType {
             LoxType::Boolean(b) => write!(f, "{b}"),
             LoxType::Nil => write!(f, "nil"),
             LoxType::Class { name, .. } => write!(f, "{name}"),
-            LoxType::ClassInstance { class } => write!(f, "{class} instance"),
+            LoxType::ClassInstance { class, .. } => write!(f, "{class} instance"),
             _ => todo!("Not implemented"),
         }
     }

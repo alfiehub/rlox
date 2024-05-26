@@ -69,6 +69,8 @@ impl Visitor<String> for Printer {
                 )
             }
             Expression::Variable(ident) => ident.to_string(),
+            Expression::Get(expr, ident) => format!("{}.{ident}", self.visit_expression(*expr)),
+            Expression::Set(expr, ident, value) => format!("{}.{ident} = {};", self.visit_expression(*expr), self.visit_expression(*value)),
         }
     }
 

@@ -187,6 +187,7 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
             Expression::Call(f, _) => {
                 self.visit_expression(*f.clone())?;
             }
+            Expression::Get(expr, _) => self.visit_expression(*expr.clone())?,
             _ => {}
         };
         Ok(())

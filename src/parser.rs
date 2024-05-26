@@ -86,8 +86,14 @@ impl Parser {
             TokenType::Equal => {
                 self.advance();
                 let value = self.assignment()?;
-                if let Expression::Variable(ident) = expr {
-                    return Ok(Expression::Assign(ident, Box::new(value)));
+                match expr {
+                    Expression::Variable(ident) => {
+                        return Ok(Expression::Assign(ident, Box::new(value)))
+                    }
+                    Expression::Get(object, ident) => {
+                        return Ok(Expression::Set(object, ident, value.into()))
+                    }
+                    _ => {}
                 }
                 bail!("Invalid assignment target.");
             }
@@ -153,15 +159,24 @@ impl Parser {
 
     fn call(&mut self) -> Result<Expression> {
         let mut expr = self.primary()?;
-        while let TokenType::LeftParen = self.peek().token_type {
-            self.advance();
-            let arguments = if TokenType::RightParen == self.peek().token_type {
-                vec![]
-            } else {
-                self.arguments()?
-            };
-            self.consume(TokenType::RightParen, "Expected ')' after arguments.")?;
-            expr = Expression::Call(expr.into(), arguments);
+        loop {
+            match self.peek().token_type {
+                TokenType::LeftParen => {
+                    self.advance();
+                    let arguments = if TokenType::RightParen == self.peek().token_type {
+                        vec![]
+                    } else {
+                        self.arguments()?
+                    };
+                    self.consume(TokenType::RightParen, "Expected ')' after arguments.")?;
+                    expr = Expression::Call(expr.into(), arguments);
+                }
+                TokenType::Dot => {
+                    self.advance();
+                    expr = Expression::Get(expr.into(), self.identifier()?);
+                }
+                _ => break,
+            }
         }
         Ok(expr)
     }
@@ -549,6 +564,22 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_function() {
+        let program = "
+            fun a() {
+                fun b() {
+                    return 1;
+                }
+                return b;
+            }
+            a()();
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        parser.parse().expect("Should be able to parse");
+    }
+
+    #[test]
     fn test_class() {
         let program = "
             class EmptyClass {}
@@ -557,6 +588,19 @@ mod tests {
                     print 1;
                 }
             }
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        parser.parse().expect("Should be able to parse");
+    }
+
+    #[test]
+    fn test_class_properties() {
+        let program = "
+            class MyClass {}
+            var instance = MyClass();
+            instance.test = 123;
+            print instance.test;
         ";
         let tokens = Scanner::scan(program).unwrap();
         let mut parser = Parser::new(tokens);

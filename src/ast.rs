@@ -54,6 +54,8 @@ pub enum Expression {
     Logical(Box<Expression>, Operator, Box<Expression>),
     Unary(UnaryOperator, Box<Expression>),
     Variable(Identifier),
+    Get(Box<Expression>, Identifier),
+    Set(Box<Expression>, Identifier, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
