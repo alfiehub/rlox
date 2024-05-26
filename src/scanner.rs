@@ -80,11 +80,11 @@ impl Scanner {
                 } else {
                     tokens.push(Token::new_empty(TokenType::Slash, line));
                 },
-                '"' => if let Some(_) = iter.peek() {
+                '"' => if iter.peek().is_some() {
                     let mut string = String::new();
                     // TODO: is a mutable closed here the best approach?
                     let mut closed = false;
-                    while let Some(ch) = iter.next() {
+                    for ch in iter.by_ref() {
                         if ch == '"' {
                             closed = true;
                             break;
@@ -105,7 +105,7 @@ impl Scanner {
                     let mut number = String::new();
                     number.push(char);
                     while let Some(ch) = iter.peek() {
-                        if ch.is_digit(10) || *ch == '.' {
+                        if ch.is_ascii_digit() || *ch == '.' {
                             number.push(*ch);
                             iter.next();
                         } else {

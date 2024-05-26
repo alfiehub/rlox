@@ -304,13 +304,13 @@ impl Parser {
                 let mut body = self.statement()?;
 
                 if let Some(increment) = increment {
-                    body = Statement::Block(vec![body.into(), increment.into()])
+                    body = Statement::Block(vec![body, increment.into()])
                 };
                 if let Some(condition) = condition {
                     body = Statement::While(condition, Box::new(body))
                 };
                 if let Some(initializer) = initializer {
-                    body = Statement::Block(vec![initializer, body.into()])
+                    body = Statement::Block(vec![initializer, body])
                 };
 
                 body
@@ -501,16 +501,12 @@ mod tests {
 
     #[test]
     fn test_expressions() {
-        let codes = vec![
-            "1 + 2 * 3",
+        let codes = ["1 + 2 * 3",
             "1 + 2 * 3 + 4",
-            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8",
-        ];
-        let results = vec![
-            "(+ 1 (* 2 3))",
+            "1 + 2 + 3 + 4 * 5 * 6 + 7 + 8"];
+        let results = ["(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
-            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)",
-        ];
+            "(+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8)"];
         for (code, result) in codes.iter().zip(results.iter()) {
             let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);
@@ -521,18 +517,14 @@ mod tests {
 
     #[test]
     fn test_statements() {
-        let codes = vec![
-            "1 + 2 * 3;",
+        let codes = ["1 + 2 * 3;",
             "1 + 2* 3 + 4;",
             "print 1 + 2 + 3 + 4;",
-            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;",
-        ];
-        let results = vec![
-            "(+ 1 (* 2 3))",
+            "print 1 + 2 + 3 + 4 * 5 * 6 + 7 + 8;"];
+        let results = ["(+ 1 (* 2 3))",
             "(+ (+ 1 (* 2 3)) 4)",
             "(print (+ (+ (+ 1 2) 3) 4))",
-            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))",
-        ];
+            "(print (+ (+ (+ (+ (+ 1 2) 3) (* (* 4 5) 6)) 7) 8))"];
         for (code, result) in codes.iter().zip(results.iter()) {
             let tokens = Scanner::scan(code).unwrap();
             let mut parser = Parser::new(tokens);
@@ -542,7 +534,7 @@ mod tests {
                 *result,
                 "\"{}\" yielded {}",
                 code,
-                statement.to_string()
+                statement
             );
         }
     }

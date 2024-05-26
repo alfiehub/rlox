@@ -52,8 +52,7 @@ impl LoxType {
             (Self::Boolean(l0), Self::Boolean(r0)) => l0 == r0,
             (Self::Nil, Self::Nil) => true,
             _ => lox_type_bail!(format!("== not defined for {} {}", self, other)),
-        }
-        .into())
+        })
     }
 
     pub fn neq(&self, other: &Self) -> LoxTypeResult<bool> {

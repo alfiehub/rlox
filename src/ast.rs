@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::token::Token;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Program(pub Statement);
 
@@ -27,12 +28,12 @@ single_token_display!(Identifier);
 pub struct IdentifierKey(pub String);
 impl From<Identifier> for IdentifierKey {
     fn from(value: Identifier) -> Self {
-        IdentifierKey(format!("{}@{}", value.to_string(), value.0.line))
+        IdentifierKey(format!("{}@{}", value, value.0.line))
     }
 }
 impl From<&Identifier> for IdentifierKey {
     fn from(value: &Identifier) -> Self {
-        IdentifierKey(format!("{}@{}", value.to_string(), value.0.line))
+        IdentifierKey(format!("{}@{}", value, value.0.line))
     }
 }
 
@@ -99,13 +100,13 @@ impl From<Expression> for Statement {
 
 fn parenthesize(name: &str, expressions: &[&Expression]) -> String {
     let mut result = String::new();
-    result.push_str("(");
+    result.push('(');
     result.push_str(name);
     for expression in expressions {
-        result.push_str(" ");
+        result.push(' ');
         result.push_str(&expression.to_string());
     }
-    result.push_str(")");
+    result.push(')');
     result
 }
 

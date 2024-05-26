@@ -129,7 +129,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
             }
             Statement::Print(expr) => {
                 let output = self.visit_expression(expr)?;
-                write!(self.writer, "{}\n", output).unwrap();
+                writeln!(self.writer, "{}", output).unwrap();
                 Ok(LoxType::default())
             }
             Statement::If(cond, then_branch, else_branch) => {
@@ -146,12 +146,11 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 let return_value = loop {
                     let stmt = &stmts[i];
                     // TODO: avoid clone
-                    match self.visit_statement(stmt.clone()) {
-                        Err(e) => match e {
+                    if let Err(e) = self.visit_statement(stmt.clone()) {
+                        match e {
                             InterpreterError::Return(value) => break value.clone(),
                             _ => return Err(e),
-                        },
-                        _ => {}
+                        }
                     }
                     i += 1;
                     if i == stmts.len() {
@@ -159,7 +158,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     }
                 };
                 self.unnest_environment();
-                return Ok(return_value);
+                Ok(return_value)
             }
             Statement::While(cond, stmt) => {
                 // TODO: avoid cloning
@@ -173,7 +172,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     self.environment.borrow_mut().create(
                         identifier.clone(),
                         Some(LoxType::Function(
-                            Statement::Function(ident, arg_idents, stmt.into()),
+                            Statement::Function(ident, arg_idents, stmt),
                             self.environment.clone(),
                         )),
                     );
@@ -277,7 +276,11 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 TokenType::True => true.into(),
                 TokenType::False => false.into(),
                 TokenType::Nil => LoxType::Nil,
-                _ => return Err(InterpreterError::GenericError(format!("Invalid literal"))),
+                _ => {
+                    return Err(InterpreterError::GenericError(
+                        "Invalid literal".to_string(),
+                    ))
+                }
             }),
             Expression::Assign(ident, expr) => {
                 let value = self.visit_expression(*expr)?;
@@ -285,7 +288,7 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     self.environment.borrow_mut().assign_at_distance(
                         identifier.clone(),
                         Some(value),
-                        self.locals.get(&ident.into()).map(|d| *d),
+                        self.locals.get(&ident.into()).copied(),
                     )?;
                 } else {
                     return Err(InterpreterError::Unexpected(format!(
@@ -372,17 +375,15 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         .borrow()
                         .get_at_distance(
                             &ident.to_string(),
-                            self.locals.get(&(&ident).into()).map(|d| *d),
+                            self.locals.get(&(&ident).into()).copied(),
                         )
                         .map_err(|e| InterpreterError::GenericError(e.to_string()))?
                     {
                         Some(value) => Ok(value),
-                        None => {
-                            return Err(InterpreterError::UninitializedVariable(format!(
-                                "Uninitialized variable '{}'",
-                                ident
-                            )))
-                        }
+                        None => Err(InterpreterError::UninitializedVariable(format!(
+                            "Uninitialized variable '{}'",
+                            ident
+                        ))),
                     }
                 }
             }
@@ -392,17 +393,15 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     properties, class, ..
                 } = object
                 {
-                    properties
-                        .borrow()
-                        .get(&ident.to_string())
-                        .map(|v| v.clone())
-                        .ok_or(InterpreterError::GenericError(format!(
+                    properties.borrow().get(&ident.to_string()).cloned().ok_or(
+                        InterpreterError::GenericError(format!(
                             "No property '{ident}' on {class} instance."
-                        )))
+                        )),
+                    )
                 } else {
-                    return Err(InterpreterError::GenericError(
+                    Err(InterpreterError::GenericError(
                         "Only instances have properties.".to_string(),
-                    ));
+                    ))
                 }
             }
             Expression::Set(expr, ident, value) => {
@@ -412,9 +411,9 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     properties.borrow_mut().insert(ident.to_string(), value);
                     Ok(LoxType::Nil)
                 } else {
-                    return Err(InterpreterError::GenericError(
+                    Err(InterpreterError::GenericError(
                         "Only instances have properties.".to_string(),
-                    ));
+                    ))
                 }
             }
         }
@@ -466,9 +465,8 @@ mod tests {
             let mut parser = Parser::new(tokens);
             let expr = parser.expression().unwrap();
             let result = Interpreter::new().visit_expression(expr).unwrap();
-            assert_eq!(
+            assert!(
                 result.eq(expected_result).unwrap(),
-                true,
                 "\"{}\" resulted in {}",
                 expression,
                 result
@@ -478,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_statement() {
-        let expressions = vec![
+        let expressions = [
             "6 / (2 - 1) + 2;",
             "1 + 2 * 3;",
             "1 + 2 * 3 - 4 / 2;",
@@ -496,9 +494,8 @@ mod tests {
             let mut parser = Parser::new(tokens);
             let stmt = parser.statement().unwrap();
             let result = Interpreter::new().visit_statement(stmt).unwrap();
-            assert_eq!(
+            assert!(
                 result.eq(&LoxType::Nil).unwrap(),
-                true,
                 "\"{}\" resulted in {}",
                 expression,
                 result

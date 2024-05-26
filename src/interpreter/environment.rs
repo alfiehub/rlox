@@ -51,8 +51,7 @@ impl Environment {
             }
         } else {
             self.parent
-                .as_ref()
-                .map(|e| e.clone())
+                .clone()
                 .ok_or_else(|| EnvironmentError("No parent.".to_string()))
         }
     }
@@ -83,8 +82,8 @@ impl Environment {
     }
 
     fn assign(&mut self, key: String, value: Option<LoxType>) -> Result<(), EnvironmentError> {
-        if self.values.contains_key(&key) {
-            self.values.insert(key, value);
+        if let std::collections::hash_map::Entry::Occupied(mut e) = self.values.entry(key.clone()) {
+            e.insert(value);
             Ok(())
         } else {
             match &self.parent {
@@ -120,7 +119,7 @@ impl Environment {
     fn global(&self) -> Option<Rc<RefCell<Self>>> {
         if let Some(parent) = &self.parent {
             // We have a parent, but do we have a grandparent?
-            if let Some(_) = parent.borrow().parent {
+            if parent.borrow().parent.is_some() {
                 // Yes, we need to check if the grandparent is the topmost
                 parent.borrow().global()
             } else {

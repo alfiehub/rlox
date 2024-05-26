@@ -8,17 +8,19 @@ struct Printer {
 }
 
 impl Printer {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self { depth: 0 }
     }
 
+    #[allow(dead_code)]
     fn print(&mut self, decl: Vec<Statement>) -> String {
         decl.into_iter()
             .map(|d| self.visit_statement(d))
             .collect::<String>()
-            .replace(";", ";\n")
-            .replace("{", "{\n")
-            .replace("}", "}\n")
+            .replace(';', ";\n")
+            .replace('{', "{\n")
+            .replace('}', "}\n")
             // unfuck else
             .replace("}\n else", "} else")
     }
@@ -47,14 +49,11 @@ impl Visitor<String> for Printer {
                 self.visit_expression(*right_expr)
             ),
             Expression::Grouping(expr) => format!("({})", self.visit_expression(*expr)),
-            Expression::Literal(lit) => {
-                let o = match lit.0.token_type {
-                    crate::token::TokenType::String(s) => format!("\"{s}\""),
-                    crate::token::TokenType::Number(n) => format!("{n}"),
-                    _ => lit.to_string(),
-                };
-                o
-            }
+            Expression::Literal(lit) => match lit.0.token_type {
+                crate::token::TokenType::String(s) => format!("\"{s}\""),
+                crate::token::TokenType::Number(n) => format!("{n}"),
+                _ => lit.to_string(),
+            },
             Expression::Assign(ident, expr) => {
                 format!("{ident} = {}", self.visit_expression(*expr))
             }
@@ -70,7 +69,11 @@ impl Visitor<String> for Printer {
             }
             Expression::Variable(ident) => ident.to_string(),
             Expression::Get(expr, ident) => format!("{}.{ident}", self.visit_expression(*expr)),
-            Expression::Set(expr, ident, value) => format!("{}.{ident} = {};", self.visit_expression(*expr), self.visit_expression(*value)),
+            Expression::Set(expr, ident, value) => format!(
+                "{}.{ident} = {};",
+                self.visit_expression(*expr),
+                self.visit_expression(*value)
+            ),
         }
     }
 
@@ -128,7 +131,7 @@ impl Visitor<String> for Printer {
                 if let Some(expr) = expr {
                     format!("return {};", self.visit_expression(expr))
                 } else {
-                    format!("return;")
+                    "return;".to_string()
                 }
             }
             Statement::Variable(ident, expr) => {
@@ -178,8 +181,8 @@ fun a() {
         let program = parse!(input, declaration);
         let mut ast_printer = Printer::new();
         assert_eq!(
-            input.replace("\n", ""),
-            ast_printer.visit_statement(program).replace("\n", "")
+            input.replace('\n', ""),
+            ast_printer.visit_statement(program).replace('\n', "")
         );
     }
 
