@@ -15,6 +15,7 @@ enum FunctionType {
 
 #[derive(Eq, PartialEq)]
 enum ClassType {
+    Subclass,
     Class,
     None,
 }
@@ -107,6 +108,14 @@ pub enum ResolverError {
     TopLevelReturn,
     #[error("Can't use 'this' outside of a class.")]
     ThisOutsideClass,
+    #[error("Unexpected AST node.")]
+    UnexpectedASTNode,
+    #[error("A class can't inherit from itself.")]
+    ClassInheritSelf,
+    #[error("Can't use 'super' outside of a class.")]
+    SuperOutsideClass,
+    #[error("Can't use 'super' in a class with no superclass.")]
+    SuperWithNoSuperclass,
 }
 
 #[allow(unused_variables)]
@@ -156,16 +165,32 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                 }
                 self.visit_expression(expr)?;
             }
-            Statement::Class(ident, methods) => {
+            Statement::Class(ident, superclass, methods) => {
                 self.current_class = ClassType::Class;
                 self.declare(ident.clone())?;
-                self.define(ident);
+                self.define(ident.clone());
+                if let Some(ref superclass) = superclass {
+                    self.current_class = ClassType::Subclass;
+                    self.visit_expression(superclass.clone())?;
+                    let Expression::Variable(superclass_ident) = superclass else {
+                        return Err(ResolverError::UnexpectedASTNode);
+                    };
+                    if ident.to_string() == superclass_ident.to_string() {
+                        return Err(ResolverError::ClassInheritSelf);
+                    }
+                    self.begin_scope();
+                    self.define("super");
+                }
+
                 self.begin_scope();
                 self.define("this");
                 for method in methods {
                     self.resolve_function(method, FunctionType::Method)?;
                 }
                 self.end_scope();
+                if superclass.is_some() {
+                    self.end_scope();
+                }
                 self.current_class = ClassType::None;
             }
             Statement::Return(_) => {}
@@ -216,6 +241,14 @@ impl<T: std::io::Write> Visitor<Result<(), ResolverError>> for Resolver<'_, T> {
                     return Err(ResolverError::ThisOutsideClass);
                 }
                 self.resolve_local(ident.clone());
+            }
+            Expression::Super(s, _) => {
+                match self.current_class {
+                    ClassType::Class => return Err(ResolverError::SuperWithNoSuperclass),
+                    ClassType::None => return Err(ResolverError::SuperOutsideClass),
+                    _ => {}
+                }
+                self.resolve_local(s.clone());
             }
             Expression::Literal(_) => {}
         };
@@ -330,5 +363,18 @@ mod tests {
         let mut resolver = Resolver::new(&mut interpreter);
         let error = resolver.resolve(program).unwrap_err();
         assert_eq!(error, ResolverError::ThisOutsideClass)
+    }
+
+    #[test]
+    fn test_self_inheritance() {
+        let program = parse!(
+            "
+            class Oops < Oops {}
+            "
+        );
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        let error = resolver.resolve(program).unwrap_err();
+        assert_eq!(error, ResolverError::ClassInheritSelf)
     }
 }

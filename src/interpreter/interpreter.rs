@@ -10,7 +10,7 @@ use anyhow::Result;
 use crate::{
     ast::{Expression, Identifier, IdentifierKey, Statement},
     lox_type::{Class, ClassInstance, Function, LoxType, LoxTypeError},
-    resolver::Resolver,
+    resolver::{Resolver, ResolverError},
     token::{Token, TokenType},
     visitor::Visitor,
 };
@@ -31,6 +31,8 @@ pub enum InterpreterError {
     InvalidBinaryOperator,
     #[error("Generic error")]
     GenericError(String),
+    #[error("ResolverError")]
+    ResolverError(#[from] ResolverError),
 }
 
 impl From<EnvironmentError> for InterpreterError {
@@ -122,8 +124,7 @@ impl<T: std::io::Write> Interpreter<T> {
     }
 
     pub fn interpret(&mut self, stmts: &[Statement]) -> InterpreterResult<()> {
-        // TODO: handle err
-        Resolver::new(self).resolve(stmts.to_vec()).unwrap();
+        Resolver::new(self).resolve(stmts.to_vec())?;
         for stmt in stmts {
             // TODO: avoid clone
             self.visit_statement(stmt.clone())?;
@@ -262,7 +263,23 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                 }
                 Ok(LoxType::Nil)
             }
-            Statement::Class(ident, methods) => {
+            Statement::Class(ident, superclass, methods) => {
+                let superclass = if let Some(superclass) = superclass {
+                    let superclass = self.visit_expression(superclass)?;
+                    let LoxType::Class(superclass) = superclass else {
+                        return Err(InterpreterError::Unexpected(
+                            "Superclass must be a class".to_string(),
+                        ));
+                    };
+                    self.nest_environment();
+                    self.environment.borrow_mut().create(
+                        "super".to_string(),
+                        Some(LoxType::Class(superclass.clone())),
+                    );
+                    Some(Box::new(superclass))
+                } else {
+                    None
+                };
                 let methods = methods
                     .into_iter()
                     .map(|method| {
@@ -282,10 +299,14 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                     })
                     .collect::<InterpreterResult<HashMap<String, Function>>>()?;
                 let arity = methods.get("init").map(|f| f.arity).unwrap_or_default();
+                if superclass.is_some() {
+                    self.unnest_environment();
+                }
                 self.environment.borrow_mut().create(
                     ident.to_string(),
                     Some(LoxType::Class(Class {
                         name: ident.to_string(),
+                        superclass,
                         arity,
                         methods: Rc::new(RefCell::new(methods)),
                     })),
@@ -461,6 +482,28 @@ impl<T: std::io::Write> Visitor<Result<LoxType, InterpreterError>> for Interpret
                         "Only instances have properties.".to_string(),
                     ))
                 }
+            }
+            Expression::Super(_, method) => {
+                let Some(LoxType::ClassInstance(object)) =
+                    self.environment.borrow().get_at_distance("this", Some(1))?
+                else {
+                    return Err(InterpreterError::Unexpected(
+                        "'this' should be a class instance.".to_string(),
+                    ));
+                };
+                let Some(LoxType::Class(superclass)) = self.environment.borrow().get("super")?
+                else {
+                    return Err(InterpreterError::Unexpected(
+                        "'super' should resolve to the superclass in the environment.".to_string(),
+                    ));
+                };
+                let f = superclass.get_method(method.to_string()).ok_or(
+                    InterpreterError::Unexpected(format!(
+                        "Undefined property on {}",
+                        superclass.name
+                    )),
+                )?;
+                Ok(LoxType::Function(f.bind(object)))
             }
             Expression::This(ident) => self.look_up_variable(ident),
         }
@@ -738,5 +781,92 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "Hello instance\nHello from init!\nAssignment in init!\n".to_string()
         );
+    }
+
+    #[test]
+    fn test_not_a_class() {
+        let program = parse!(
+            "
+            var NotAClass = \"I am totally not a class\";
+
+            class Subclass < NotAClass {} // ?!
+            "
+        );
+        let mut output = Vec::new();
+        let interpreter_result = Interpreter::new_from_writer(&mut output).interpret(&program);
+        assert!(matches!(
+            interpreter_result,
+            Err(InterpreterError::Unexpected(_)),
+        ));
+    }
+
+    #[test]
+    fn test_class_inheritance() {
+        let program = parse!(
+            "
+            class Doughnut {
+              cook() {
+                print \"Fry until golden brown.\";
+              }
+            }
+
+            class BostonCream < Doughnut {
+              cook() {
+                super.cook();
+                print \"Pipe full of custard and coat with chocolate.\";
+              }
+            }
+
+            BostonCream().cook();
+            "
+        );
+        let mut output = Vec::new();
+        Interpreter::new_from_writer(&mut output)
+            .interpret(&program)
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Fry until golden brown.\nPipe full of custard and coat with chocolate.\n".to_string()
+        );
+    }
+
+    #[test]
+    fn test_class_inheritance_invalid() {
+        let program = parse!(
+            "
+            class Eclair {
+              cook() {
+                super.cook();
+                super.notEvenInAClass();
+                print \"Pipe full of crème pâtissière.\";
+              }
+            }
+
+            "
+        );
+        let mut output = Vec::new();
+        let interpreter_result = Interpreter::new_from_writer(&mut output).interpret(&program);
+        assert!(matches!(
+            interpreter_result,
+            Err(InterpreterError::ResolverError(
+                ResolverError::SuperWithNoSuperclass
+            )),
+        ));
+    }
+    #[test]
+    fn test_class_super_outside() {
+        let program = parse!(
+            "
+            super.cook();
+            "
+        );
+        let mut output = Vec::new();
+        let interpreter_result = Interpreter::new_from_writer(&mut output).interpret(&program);
+        assert!(matches!(
+            interpreter_result,
+            Err(InterpreterError::ResolverError(
+                ResolverError::SuperOutsideClass
+            )),
+        ));
     }
 }

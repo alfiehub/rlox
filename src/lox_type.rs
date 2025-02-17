@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{
     ast::Statement,
@@ -32,6 +32,7 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct Class {
     pub name: String,
+    pub superclass: Option<Box<Class>>,
     pub arity: usize,
     pub methods: Rc<RefCell<HashMap<String, Function>>>,
 }
@@ -127,7 +128,13 @@ impl LoxType {
 }
 impl Class {
     pub fn get_method(&self, ident: String) -> Option<Function> {
-        self.methods.borrow().get(&ident).cloned()
+        let methods: &RefCell<_> = self.methods.borrow();
+        let method = methods.borrow().get(&ident).cloned();
+        method.or_else(|| {
+            self.superclass
+                .as_ref()
+                .and_then(|superclass| superclass.get_method(ident))
+        })
     }
 }
 

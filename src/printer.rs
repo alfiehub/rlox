@@ -70,10 +70,11 @@ impl Visitor<String> for Printer {
             Expression::Variable(ident) => ident.to_string(),
             Expression::Get(expr, ident) => format!("{}.{ident}", self.visit_expression(*expr)),
             Expression::Set(expr, ident, value) => format!(
-                "{}.{ident} = {};",
+                "{}.{ident} = {}",
                 self.visit_expression(*expr),
                 self.visit_expression(*value)
             ),
+            Expression::Super(ident, _) => ident.to_string(),
             Expression::This(ident) => ident.to_string(),
         }
     }
@@ -142,10 +143,13 @@ impl Visitor<String> for Printer {
                     format!("var {ident};")
                 }
             }
-            Statement::Class(ident, methods) => {
+            Statement::Class(ident, superclass, methods) => {
                 self.depth += 1;
+                let superclass = superclass
+                    .map(|expr| format!(" < {}", self.visit_expression(expr)))
+                    .unwrap_or_default();
                 let output = format!(
-                    "class {ident} {{{}{}",
+                    "class {ident}{superclass} {{{}{}",
                     methods
                         .into_iter()
                         .map(|d| padded_format!(
@@ -194,7 +198,6 @@ fun a() {
                 let input = std::fs::read_to_string(format!("scripts/{}.lox", $file)).unwrap();
                 let program = parse!(&input);
                 let mut ast_printer = Printer::new();
-                println!("{}", ast_printer.print(program.clone()));
                 assert_eq!(
                     input.replace("\n", ""),
                     ast_printer.print(program).replace("\n", "")

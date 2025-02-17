@@ -57,13 +57,14 @@ pub enum Expression {
     Variable(Identifier),
     Get(Box<Expression>, Identifier),
     Set(Box<Expression>, Identifier, Box<Expression>),
+    Super(Identifier, Identifier),
     This(Identifier),
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Block(Vec<Statement>),
-    Class(Identifier, Vec<Statement>),
+    Class(Identifier, Option<Expression>, Vec<Statement>),
     Expression(Expression),
     Function(Identifier, Vec<Identifier>, Box<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),

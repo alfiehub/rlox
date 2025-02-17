@@ -1,6 +1,11 @@
 class EmptyClass {}
-class MyClass {
+class MyClass < EmptyClass {
+  init(msg) {
+    this.msg = msg;
+  }
   someMethod() {
-    print "hello world";
+    print this.msg;
   }
 }
+var m = MyClass("hello world");
+m.someMethod();

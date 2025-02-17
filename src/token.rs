@@ -3,51 +3,90 @@ use std::fmt::Display;
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum TokenType {
     // Single character tokens
+    /// (
     LeftParen,
+    /// )
     RightParen,
+    /// {
     LeftBrace,
+    /// }
     RightBrace,
+    /// ,
     Comma,
+    /// .
     Dot,
+    /// -
     Minus,
+    /// +
     Plus,
+    /// ;
     Semicolon,
+    /// /
     Slash,
+    /// *
     Star,
 
     // One or two character tokens
+    /// !
     Bang,
+    /// !=
     BangEqual,
+    /// =
     Equal,
+    /// ==
     EqualEqual,
+    /// >
     Greater,
+    /// >=
     GreaterEqual,
+    /// <
     Less,
+    /// <=
     LessEqual,
 
     // Literals
+    /// Identifier
     Identifier(String),
+    /// String
     String(String),
+    /// Number
     Number(f64),
 
-    // Kwtqoesa
+    // Keywords
+    /// and
     And,
+    /// class
     Class,
+    /// else
     Else,
+    /// false
     False,
+    /// fun
     Fun,
+    /// for
     For,
+    /// if
     If,
+    /// nil
     Nil,
+    /// or
     Or,
+    /// print
     Print,
+    /// return
     Return,
+    /// super
     Super,
+    /// this
     This,
+    /// true
     True,
+    /// var
     Var,
+    /// while
     While,
 
+    /// EOF
     Eof,
 }
 

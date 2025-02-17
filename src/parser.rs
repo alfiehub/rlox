@@ -28,11 +28,11 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<()> {
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<Token> {
         let token = self.peek();
         if token.token_type == token_type {
             self.advance();
-            Ok(())
+            Ok(token)
         } else {
             bail!(ParserError::UnexpectedToken {
                 line: token.line,
@@ -125,6 +125,16 @@ impl Parser {
             TokenType::This => {
                 self.advance();
                 Expression::This(Identifier(token))
+            }
+            TokenType::Super => {
+                self.advance();
+                self.consume(TokenType::Dot, "Expected '.' after 'super'.")?;
+                let method = match self.peek().token_type {
+                    TokenType::Identifier(_) => self.peek(),
+                    _ => bail!("Expected identifier after 'super'."),
+                };
+                self.advance();
+                Expression::Super(Identifier(token), Identifier(method))
             }
             _ => {
                 bail!(
@@ -406,6 +416,19 @@ impl Parser {
             };
             self.advance();
 
+            let superclass = match self.peek().token_type {
+                TokenType::Less => {
+                    self.advance();
+                    let superclass_identifier = match self.peek().token_type {
+                        TokenType::Identifier(_) => self.peek(),
+                        _ => bail!("Expected superclass identfier."),
+                    };
+                    self.advance();
+                    Some(Expression::Variable(Identifier(superclass_identifier)))
+                }
+                _ => None,
+            };
+
             self.consume(
                 TokenType::LeftBrace,
                 "Expected '{' after function identifier",
@@ -425,7 +448,7 @@ impl Parser {
                 TokenType::RightBrace,
                 "Expected '}' after function identifier",
             )?;
-            Statement::Class(Identifier(identifier), methods)
+            Statement::Class(Identifier(identifier), superclass, methods)
         } else {
             self.statement()?
         };
@@ -605,6 +628,26 @@ mod tests {
             var instance = MyClass();
             instance.test = 123;
             print instance.test;
+        ";
+        let tokens = Scanner::scan(program).unwrap();
+        let mut parser = Parser::new(tokens);
+        parser.parse().expect("Should be able to parse");
+    }
+
+    #[test]
+    fn test_class_inheritance() {
+        let program = "
+            class EmptyClass {}
+            class MyClass < EmptyClass {
+              init(msg) {
+                this.msg = msg;
+              }
+              someMethod() {
+                print this.msg;
+              }
+            }
+            var m = MyClass(\"hello world\");
+            m.someMethod();
         ";
         let tokens = Scanner::scan(program).unwrap();
         let mut parser = Parser::new(tokens);
