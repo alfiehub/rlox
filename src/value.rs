@@ -1,6 +1,6 @@
 use crate::memory::{grow_capacity, grow_vec};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Value(pub f64);
 
 impl Value {

@@ -1,9 +1,58 @@
-use crate::{chunk::Chunk, op_code::OpCode};
+use std::pin::Pin;
+
+use crate::{chunk::Chunk, op_code::OpCode, value::Value};
+
+const STACK_MAX: usize = 256;
+
+#[derive(Debug)]
+struct Stack {
+    /// `stack` must be pinned to prevent it from moving. It can't be moved because of the
+    /// `stack_top` pointer.
+    stack: Pin<Box<[Value; STACK_MAX]>>,
+    stack_top: *mut Value,
+}
+
+impl Stack {
+    fn new() -> Self {
+        let mut stack = Box::pin([Value::default(); STACK_MAX]);
+        let stack_top: *mut Value = stack.as_mut_ptr();
+        Self { stack, stack_top }
+    }
+
+    fn push(&mut self, value: Value) {
+        unsafe {
+            *self.stack_top = value;
+            self.stack_top = self.stack_top.add(1);
+        }
+    }
+
+    fn pop(&mut self) -> Value {
+        unsafe {
+            self.stack_top = self.stack_top.sub(1);
+            std::mem::take(self.stack_top.as_mut().unwrap())
+        }
+    }
+
+    fn print(&self) {
+        let mut current = self.stack.as_ptr();
+        print!("          ");
+        while current < self.stack_top {
+            unsafe {
+                print!("[");
+                current.as_ref().unwrap().print();
+                print!("]");
+                current = current.add(1);
+            }
+        }
+        println!();
+    }
+}
 
 pub struct Vm<'a> {
     chunk: &'a Chunk,
     /// Instruction Pointer
     ip: *const u8,
+    stack: Stack,
 }
 
 pub type InterpretResult = Result<(), InterpretError>;
@@ -28,7 +77,11 @@ macro_rules! read_constant {
 impl<'a> Vm<'a> {
     pub fn new(chunk: &'a Chunk) -> Self {
         let ip = chunk.code.first().unwrap();
-        Self { chunk, ip }
+        Self {
+            chunk,
+            ip,
+            stack: Stack::new(),
+        }
     }
 
     pub fn free(self) {}
@@ -44,6 +97,9 @@ impl<'a> Vm<'a> {
             let op_code = OpCode::from(instruction);
             #[cfg(debug_assertions)]
             {
+                self.stack.print();
+
+                // Some acrobatics to get the correct offset based on pointers
                 let chunk_ptr: &*const u8 = &self.chunk.code.as_ptr();
                 let chunk_ptr = *chunk_ptr as usize;
                 let ip_ptr = self.ip as usize;
@@ -52,10 +108,12 @@ impl<'a> Vm<'a> {
             match op_code {
                 OpCode::OP_CONSTANT => {
                     let value = read_constant!(self);
-                    value.print();
-                    println!();
+                    self.stack.push(*value);
                 }
                 OpCode::OP_RETURN => {
+                    let value = self.stack.pop();
+                    value.print();
+                    println!();
                     return Ok(());
                 }
             }
