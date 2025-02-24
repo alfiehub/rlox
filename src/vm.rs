@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{ops::Neg, pin::Pin};
 
 use crate::{chunk::Chunk, op_code::OpCode, value::Value};
 
@@ -74,6 +74,14 @@ macro_rules! read_constant {
     ($vm:expr) => {{ &$vm.chunk.constants.values[read_byte!($vm) as usize] }};
 }
 
+macro_rules! binary_op {
+    ($stack:expr, $op:tt) => {{
+        let b = $stack.pop().0;
+        let a = $stack.pop().0;
+        $stack.push(Value( a $op b ));
+    }};
+}
+
 impl<'a> Vm<'a> {
     pub fn new(chunk: &'a Chunk) -> Self {
         let ip = chunk.code.first().unwrap();
@@ -109,6 +117,14 @@ impl<'a> Vm<'a> {
                 OpCode::OP_CONSTANT => {
                     let value = read_constant!(self);
                     self.stack.push(*value);
+                }
+                OpCode::OP_ADD => binary_op!(self.stack, +),
+                OpCode::OP_SUBTRACT => binary_op!(self.stack, -),
+                OpCode::OP_MULTIPLY => binary_op!(self.stack, *),
+                OpCode::OP_DIVIDE => binary_op!(self.stack, /),
+                OpCode::OP_NEGATE => {
+                    let value = self.stack.pop();
+                    self.stack.push(Value(value.0.neg()));
                 }
                 OpCode::OP_RETURN => {
                     let value = self.stack.pop();

@@ -18,11 +18,15 @@ impl Chunk {
         }
         // offset should never be outside self.code
         let instruction = self.code.get(offset).unwrap();
-        match OpCode::from(*instruction) {
-            op_code @ OpCode::OP_CONSTANT => {
-                constant_instruction(&op_code.to_string(), self, offset)
-            }
-            op_code @ OpCode::OP_RETURN => simple_instruction(&op_code.to_string(), offset),
+        let op_code = OpCode::from(*instruction);
+        match op_code {
+            OpCode::OP_CONSTANT => constant_instruction(&op_code.to_string(), self, offset),
+            OpCode::OP_ADD
+            | OpCode::OP_SUBTRACT
+            | OpCode::OP_MULTIPLY
+            | OpCode::OP_DIVIDE
+            | OpCode::OP_NEGATE
+            | OpCode::OP_RETURN => simple_instruction(&op_code.to_string(), offset),
         }
     }
 }

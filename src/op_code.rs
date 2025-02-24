@@ -2,8 +2,13 @@
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum OpCode {
-    OP_CONSTANT = 0,
-    OP_RETURN = 1,
+    OP_CONSTANT,
+    OP_ADD,
+    OP_SUBTRACT,
+    OP_MULTIPLY,
+    OP_DIVIDE,
+    OP_NEGATE,
+    OP_RETURN,
 }
 
 impl OpCode {
