@@ -1,11 +1,9 @@
-use std::convert::TryFrom;
-
 #[allow(non_camel_case_types)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum OpCode {
-    OP_CONSTANT,
-    OP_RETURN,
+    OP_CONSTANT = 0,
+    OP_RETURN = 1,
 }
 
 impl OpCode {
@@ -14,15 +12,9 @@ impl OpCode {
     }
 }
 
-impl TryFrom<u8> for OpCode {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(OpCode::OP_CONSTANT),
-            1 => Ok(OpCode::OP_RETURN),
-            _ => Err(format!("Invalid OpCode value: {}", value)),
-        }
+impl From<u8> for OpCode {
+    fn from(value: u8) -> Self {
+        unsafe { std::mem::transmute(value) }
     }
 }
 

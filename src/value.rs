@@ -3,6 +3,12 @@ use crate::memory::{grow_capacity, grow_vec};
 #[derive(Debug)]
 pub struct Value(pub f64);
 
+impl Value {
+    pub fn print(&self) {
+        print!("'{}'", self.0)
+    }
+}
+
 /// A list of values
 #[derive(Default)]
 pub struct Values {
@@ -27,6 +33,6 @@ impl Values {
     }
 
     pub fn print(&self, index: u8) {
-        print!("'{}'", self.values.get(index as usize).unwrap().0);
+        self.values.get(index as usize).unwrap().print();
     }
 }

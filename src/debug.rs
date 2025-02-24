@@ -9,7 +9,7 @@ impl Chunk {
         }
     }
 
-    fn disassemble_instruction(&self, offset: usize) -> usize {
+    pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{offset:0>4} ");
         if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
             print!("   | ");
@@ -18,15 +18,11 @@ impl Chunk {
         }
         // offset should never be outside self.code
         let instruction = self.code.get(offset).unwrap();
-        match OpCode::try_from(*instruction) {
-            Ok(op_code @ OpCode::OP_CONSTANT) => {
+        match OpCode::from(*instruction) {
+            op_code @ OpCode::OP_CONSTANT => {
                 constant_instruction(&op_code.to_string(), self, offset)
             }
-            Ok(op_code @ OpCode::OP_RETURN) => simple_instruction(&op_code.to_string(), offset),
-            Err(e) => {
-                println!("Unknown opcode: {}", e);
-                offset + 1
-            }
+            op_code @ OpCode::OP_RETURN => simple_instruction(&op_code.to_string(), offset),
         }
     }
 }
