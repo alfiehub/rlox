@@ -1,6 +1,6 @@
 use std::{ops::Neg, pin::Pin};
 
-use crate::{chunk::Chunk, op_code::OpCode, value::Value};
+use crate::{chunk::Chunk, compile::compile, op_code::OpCode, value::Value};
 
 const STACK_MAX: usize = 256;
 
@@ -84,7 +84,7 @@ macro_rules! binary_op {
 
 impl<'a> Vm<'a> {
     pub fn new(chunk: &'a Chunk) -> Self {
-        let ip = chunk.code.first().unwrap();
+        let ip = chunk.code.first().unwrap_or(&0);
         Self {
             chunk,
             ip,
@@ -94,8 +94,14 @@ impl<'a> Vm<'a> {
 
     pub fn free(self) {}
 
-    pub fn interpret(&mut self, chunk: &'a Chunk) -> InterpretResult {
+    pub fn interpret_chunk(&mut self, chunk: &'a Chunk) -> InterpretResult {
         self.chunk = chunk;
+        self.run()
+    }
+
+    pub fn interpret(&mut self, source: String) -> InterpretResult {
+        let _chunk = compile(source);
+        // self.chunk = chunk;
         self.run()
     }
 
