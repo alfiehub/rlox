@@ -3,7 +3,13 @@ name = "rlox"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+debug_trace_execution = []
+debug_print_code = []
+debug = ["debug_trace_execution", "debug_print_code"]
+
 [dependencies]
+lazy_static = "1.5.0"
 
 [lints.clippy]
 module_inception = "allow"

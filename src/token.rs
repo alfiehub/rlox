@@ -2,7 +2,7 @@ use crate::scanner::Scanner;
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     // Single-character tokens.
     TOKEN_LEFT_PAREN,
@@ -48,6 +48,7 @@ pub enum TokenKind {
     TOKEN_WHILE,
 
     TOKEN_ERROR,
+    #[default]
     TOKEN_EOF,
 }
 impl std::fmt::Display for TokenKind {
@@ -62,6 +63,17 @@ pub struct Token {
     pub line: isize,
     pub length: usize,
     pub start: *const u8,
+}
+
+impl Default for Token {
+    fn default() -> Self {
+        Self {
+            kind: Default::default(),
+            line: Default::default(),
+            length: Default::default(),
+            start: std::ptr::null(),
+        }
+    }
 }
 
 impl Token {
@@ -84,5 +96,15 @@ impl Token {
             length: message.len(),
             start: message.as_ptr(),
         }
+    }
+}
+
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = String::from_utf8(
+            unsafe { std::slice::from_raw_parts(self.start, self.length) }.to_vec(),
+        )
+        .unwrap();
+        write!(f, "{}", string)
     }
 }

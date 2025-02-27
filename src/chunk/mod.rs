@@ -29,13 +29,9 @@ impl Chunk {
         self.count += 1;
     }
 
-    pub fn free(&mut self) {
-        let _ = std::mem::take(self);
-    }
-
     /// Adds a constant and returns the index where it was appended
-    pub fn add_constant(&mut self, value: Value) -> u8 {
+    pub fn add_constant(&mut self, value: Value) -> usize {
         self.constants.write(value);
-        (self.constants.count - 1) as u8
+        self.constants.count - 1
     }
 }

@@ -48,7 +48,7 @@ impl Scanner {
         unsafe { *self.current == b'\0' }
     }
 
-    fn advance(&mut self) -> u8 {
+    pub fn advance(&mut self) -> u8 {
         unsafe {
             let value = *self.current;
             self.current = self.current.add(1);
@@ -202,7 +202,7 @@ impl Scanner {
         Token::new(self.identifier_kind(), self)
     }
 
-    fn scan_token(&mut self) -> Token {
+    pub fn scan_token(&mut self) -> Token {
         self.skip_whitespace();
         self.start = self.current;
         if self.is_at_end() {

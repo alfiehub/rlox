@@ -1,6 +1,6 @@
 use std::{ops::Neg, pin::Pin};
 
-use crate::{chunk::Chunk, compile::compile, op_code::OpCode, value::Value};
+use crate::{chunk::Chunk, compiler::Compiler, op_code::OpCode, value::Value};
 
 const STACK_MAX: usize = 256;
 
@@ -33,6 +33,7 @@ impl Stack {
         }
     }
 
+    #[allow(dead_code)]
     fn print(&self) {
         let mut current = self.stack.as_ptr();
         print!("          ");
@@ -48,14 +49,14 @@ impl Stack {
     }
 }
 
-pub struct Vm<'a> {
-    chunk: &'a Chunk,
+pub struct Vm {
+    chunk: Chunk,
     /// Instruction Pointer
     ip: *const u8,
     stack: Stack,
 }
 
-pub type InterpretResult = Result<(), InterpretError>;
+pub type InterpretResult<T> = Result<T, InterpretError>;
 #[derive(Debug)]
 pub enum InterpretError {
     InterpretCompileError,
@@ -82,9 +83,9 @@ macro_rules! binary_op {
     }};
 }
 
-impl<'a> Vm<'a> {
-    pub fn new(chunk: &'a Chunk) -> Self {
-        let ip = chunk.code.first().unwrap_or(&0);
+impl Vm {
+    pub fn new(chunk: Chunk) -> Self {
+        let ip = chunk.code.as_ptr();
         Self {
             chunk,
             ip,
@@ -94,22 +95,23 @@ impl<'a> Vm<'a> {
 
     pub fn free(self) {}
 
-    pub fn interpret_chunk(&mut self, chunk: &'a Chunk) -> InterpretResult {
+    pub fn interpret_chunk(&mut self, chunk: Chunk) -> InterpretResult<()> {
         self.chunk = chunk;
         self.run()
     }
 
-    pub fn interpret(&mut self, source: String) -> InterpretResult {
-        let _chunk = compile(source);
-        // self.chunk = chunk;
+    pub fn interpret(&mut self, source: String) -> InterpretResult<()> {
+        let compiler = Compiler::new(source);
+        self.chunk = compiler.compile()?;
+        self.ip = self.chunk.code.first().unwrap();
         self.run()
     }
 
-    pub fn run(&mut self) -> InterpretResult {
+    pub fn run(&mut self) -> InterpretResult<()> {
         loop {
             let instruction = read_byte!(self);
             let op_code = OpCode::from(instruction);
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug_trace_execution")]
             {
                 self.stack.print();
 
